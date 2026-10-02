@@ -1,0 +1,29 @@
+#ifndef CAMERA_H
+#define CAMERA_H
+
+#include <stdbool.h>
+#include <cglm/cglm.h>
+
+typedef struct {
+    vec3 pos;
+    float yaw;   /* degrees, 0 = +X, increases toward +Z */
+    float pitch; /* degrees, clamped to (-89, 89) */
+
+    float speed;
+    float sensitivity;
+    float fov;   /* vertical, degrees */
+    float znear;
+    float zfar;
+
+    mat4 view;
+    mat4 proj;
+    mat4 viewproj;
+} FlyCam;
+
+void cam_init(FlyCam* cam);
+void cam_reset(FlyCam* cam);
+void cam_rotate(FlyCam* cam, float dx, float dy);
+void cam_move(FlyCam* cam, int forward, int right, int up, float dt);
+void cam_update(FlyCam* cam, int width, int height);
+
+#endif
