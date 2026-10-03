@@ -194,6 +194,26 @@ float terrain_height_at(float x, float z) {
     return a + (b - a) * tz;
 }
 
+void terrain_normal_at(float x, float z, vec3 out) {
+    const float e = TERRAIN_STEP;
+    float hl = terrain_height_at(x - e, z);
+    float hr = terrain_height_at(x + e, z);
+    float hd = terrain_height_at(x, z - e);
+    float hu = terrain_height_at(x, z + e);
+
+    /* Falling off the map: use the local height so the edge normal stays valid. */
+    float h = terrain_height_at(x, z);
+    if (hl < -500.0f) hl = h;
+    if (hr < -500.0f) hr = h;
+    if (hd < -500.0f) hd = h;
+    if (hu < -500.0f) hu = h;
+
+    out[0] = hl - hr;
+    out[1] = 2.0f * e;
+    out[2] = hd - hu;
+    glm_vec3_normalize(out);
+}
+
 void terrain_emit(void) {
     if (!s_built)
         return;
