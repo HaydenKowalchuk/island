@@ -82,3 +82,8 @@ unblocked tasks.
 ## Compile notes
 
 - meson compile && (cd src && ./island)
+- PSP (needs pspsdk at `/opt/toolchains/pspdev`):
+  `meson setup build-psp --buildtype=release -Dplatform=psp --cross-file mips-allegrex-psp`
+  then `meson compile -C build-psp`. Produces `build-psp/src/EBOOT.PBP`; assets
+  are copied next to it and the loader also checks `host0:/assets` and
+  `ms0:/PSP/GAME/island/assets`.

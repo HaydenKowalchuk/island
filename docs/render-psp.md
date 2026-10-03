@@ -1,10 +1,47 @@
 # PSP render backend (GE via sceGu)
 
-Contract for the future PSP backend (island1-gi02). It reads the core
-RenderFrame (see [render.md](render.md)) and issues native draws through the
-PSP's GE via pspsdk's sceGu/sceGum. Hardware facts below were verified against
-the pspsdk sources (github.com/pspdev/pspsdk, `src/gu`) — follow up there when
-implementing.
+Contract for the PSP backend (island1-gi02). It reads the core RenderFrame (see
+[render.md](render.md)) and issues native draws through the PSP's GE via
+pspsdk's sceGu/sceGum. Hardware facts below were verified against the pspsdk
+sources (github.com/pspdev/pspsdk, `src/gu`).
+
+## Implementation status (island1-gi02)
+
+Backend lives in `src/backend/psp/` and is built as a second meson target:
+
+- `main.c` — module boilerplate (`psp_setup.h`), fixed 60 Hz loop, pad polling.
+- `render_gu.c` — GE flusher: `sceGuSetMatrix(GU_PROJECTION/VIEW)` fed directly
+  from `frame->proj`/`frame->view` (cglm and `sceGumPerspective` share the same
+  column-major layout, so `sceGum` is only used once at init for the identity and
+  the `[0,1]^2` screen-space ortho). Mesh draws carry `d->world` as `GU_MODEL`.
+- `texture_gu.c` — stb_image PNG → `GU_PSM_8888` upload (ABGR), NEAREST.
+- `input_psp.c` — pad + nub → the core input contract.
+
+Build: `meson setup build-psp --buildtype=release -Dplatform=psp
+--cross-file mips-allegrex-psp` then `meson compile -C build-psp`; it produces
+`src/EBOOT.PBP` (plus `EBOOT.BIN`/`BOOT.BIN`) via psp-fixup-imports → psp-prxgen
+→ pack-pbp.
+
+Decisions taken while implementing, in priority order:
+
+- Framebuffers are **`GU_PSM_5650`** (double-buffered, 512-pixel stride) so the
+  GE dither is visible; depth is `GU_PSM_4444`. This is the only VRAM user
+  besides the display list — textures live in main RAM (cache-flushed) because
+  the one real texture is tiny.
+- Depth uses the reversed convention: `sceGuDepthRange(65535, 0)`,
+  `sceGuClearDepth(0)`, `GU_GEQUAL` — larger value = nearer, which is what GU
+  clears to.
+- `R_QUADS` and `R_LINES` are copied/expanded into scratch vertex buffers in the
+  GE's native packed formats (`GU_TEXTURE_32BITF | GU_COLOR_8888 |
+  GU_VERTEX_32BITF`, plus `GU_INDEX_16BIT` for meshes).
+- Lighting stays baked (vertex colours); `GU_LIGHTING` is never enabled.
+- Fog **is** hardware: `sceGuFog(fog_start, fog_end, sky)` + `GU_FOG`. This
+  supersedes the "CPU vertex-colour fog" note in island1-gi02's description.
+- Screen-space HUD/sky uses the GE's `GU_TRANSFORM_3D` with a `[0,1]` ortho and
+  depth test disabled, matching GL's bottom-left origin.
+
+Not yet verified: rendering under PPSSPP/hardware (no emulator on this machine),
+so matrix/winding/depth sign parity is reasoned but unconfirmed.
 
 ## Hardware overview
 

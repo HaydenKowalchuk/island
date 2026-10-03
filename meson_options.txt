@@ -1,0 +1,5 @@
+option('platform',
+    type: 'combo',
+    choices: ['desktop', 'psp'],
+    value: 'desktop',
+    description: 'Target platform backend to build')

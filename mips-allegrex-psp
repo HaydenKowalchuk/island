@@ -1,0 +1,21 @@
+[binaries]
+c = '/opt/toolchains/pspdev/bin/psp-gcc'
+cpp = '/opt/toolchains/pspdev/bin/psp-g++'
+ar = '/opt/toolchains/pspdev/bin/psp-gcc-ar'
+strip = '/opt/toolchains/pspdev/bin/psp-strip'
+pkg-config = '/opt/toolchains/pspdev/bin/psp-pkg-config'
+
+[built-in options]
+c_args = ['-DTARGET_PSP', '-DPSP', '-D__PSP__', '-D_GNU_SOURCE', '-G0', '-D_PSP_FW_VERSION=500', '-DNDEBUG', '-Wformat=0', '-falign-functions=64', '-flimit-function-alignment', '-fno-rounding-math', '-ffp-contract=off', '-fsigned-char', '-I/opt/toolchains/pspdev/psp/sdk/include']
+c_link_args = ['-I/opt/toolchains/pspdev/psp/sdk/lib', '-L/opt/toolchains/pspdev/psp/sdk/lib', '-L/opt/toolchains/pspdev/psp/lib']
+cpp_args = []
+cpp_link_args = []
+prefix = '/opt/toolchains/pspdev/psp'
+libdir = 'lib'
+bindir = 'bin'
+
+[host_machine]
+system = 'psp'
+cpu_family = 'mips'
+cpu = 'mips'
+endian = 'little'
