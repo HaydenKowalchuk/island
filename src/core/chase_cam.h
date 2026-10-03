@@ -28,6 +28,13 @@ void chase_cam_init(ChaseCam* c, const float car_pos[3], float heading);
 typedef float (*ChaseGroundFn)(float x, float z);
 void chase_cam_set_ground(ChaseGroundFn fn);
 
+/*
+ * Camera framing (island1-zku4): base distance/height behind the target and the
+ * height of the look-at point. Defaults match the vehicle; on foot a closer,
+ * lower rig reads better.
+ */
+void chase_cam_set_framing(float dist, float height, float look_height);
+
 void chase_cam_update(ChaseCam* c, const float car_pos[3], float heading,
                       float speed_kmh, int width, int height, float dt);
 

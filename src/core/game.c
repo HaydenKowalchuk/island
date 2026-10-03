@@ -164,6 +164,8 @@ static void build_player(void) {
                (const float[]){0.10f, 0.35f, 0.12f}, shirt);
 }
 
+static void apply_cam_framing(void);
+
 void game_init(void) {
   cam_init(&s_cam);
 
@@ -173,6 +175,7 @@ void game_init(void) {
   s_veh.speed_kmh = 0.0f;
   s_veh.bank = 0.0f;
   trail_clear();
+  apply_cam_framing();
   chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
   chase_cam_set_ground(terrain_height_at);
   s_cam_mode = CAM_CHASE;
@@ -283,6 +286,14 @@ static void drive_car(float dt) {
  * car is over land; the player is placed on the first dry side of the car.
  * Getting back in requires standing within reach of the parked car.
  */
+/* Closer, lower chase rig when on foot; the vehicle rig otherwise. */
+static void apply_cam_framing(void) {
+  if (s_mode == MODE_FOOT)
+    chase_cam_set_framing(4.5f, 1.9f, 1.2f);
+  else
+    chase_cam_set_framing(7.0f, 3.2f, 0.8f);
+}
+
 static void toggle_vehicle(void) {
   if (s_mode == MODE_DRIVE) {
     if (terrain_height_at(s_veh.pos[0], s_veh.pos[2]) <= 0.0f)
@@ -314,6 +325,7 @@ static void toggle_vehicle(void) {
       s_veh.speed_kmh = 0.0f;
       trail_clear();
       s_mode = MODE_FOOT;
+      apply_cam_framing();
       chase_cam_init(&s_chase, s_player.pos, s_player.heading);
       return;
     }
@@ -327,6 +339,7 @@ static void toggle_vehicle(void) {
     s_veh.speed = 0.0f;
     s_veh.speed_kmh = 0.0f;
     trail_clear();
+    apply_cam_framing();
     chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
   }
 }
@@ -366,10 +379,13 @@ void game_tick(float dt) {
     s_cam_mode = (s_cam_mode == CAM_CHASE) ? CAM_FLY : CAM_CHASE;
     if (s_cam_mode == CAM_FLY)
       cam_reset(&s_cam);
-    else if (s_mode == MODE_FOOT)
-      chase_cam_init(&s_chase, s_player.pos, s_player.heading);
-    else
-      chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
+    else {
+      apply_cam_framing();
+      if (s_mode == MODE_FOOT)
+        chase_cam_init(&s_chase, s_player.pos, s_player.heading);
+      else
+        chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
+    }
   }
 
   if (input_pressed(ACT_DEV_DEBUG))

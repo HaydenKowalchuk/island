@@ -14,8 +14,19 @@
 
 static ChaseGroundFn s_ground = NULL;
 
+/* Vehicle framing by default; island1-zku4 switches these on foot. */
+static float s_base_dist = 7.0f;
+static float s_base_height = 3.2f;
+static float s_look_height = 0.8f;
+
 void chase_cam_set_ground(ChaseGroundFn fn) {
     s_ground = fn;
+}
+
+void chase_cam_set_framing(float dist, float height, float look_height) {
+    s_base_dist = dist;
+    s_base_height = height;
+    s_look_height = look_height;
 }
 
 static float angle_wrap(float a) {
@@ -33,9 +44,9 @@ static float clampf(float v, float lo, float hi) {
 static void place_behind(ChaseCam* c, const float car_pos[3], float heading) {
     float fwd[3] = { sinf(heading), 0.0f, cosf(heading) };
 
-    c->pos[0] = car_pos[0] - fwd[0] * 7.0f;
-    c->pos[1] = car_pos[1] + 3.2f;
-    c->pos[2] = car_pos[2] - fwd[2] * 7.0f;
+    c->pos[0] = car_pos[0] - fwd[0] * s_base_dist;
+    c->pos[1] = car_pos[1] + s_base_height;
+    c->pos[2] = car_pos[2] - fwd[2] * s_base_dist;
     glm_vec3_zero(c->vel);
 }
 
@@ -60,9 +71,9 @@ void chase_cam_update(ChaseCam* c, const float car_pos[3], float heading,
 
     float s01 = clampf(speed_kmh / 100.0f, 0.0f, 1.0f);
 
-    /* Pull back and rise as the car speeds up. */
-    float dist = 7.0f + s01 * 4.0f;
-    float cam_height = 3.2f + s01 * 1.2f;
+    /* Pull back and rise as the target speeds up. */
+    float dist = s_base_dist + s01 * 4.0f;
+    float cam_height = s_base_height + s01 * 1.2f;
 
     float fwd[3] = { sinf(c->heading_lag), 0.0f, cosf(c->heading_lag) };
 
@@ -88,7 +99,7 @@ void chase_cam_update(ChaseCam* c, const float car_pos[3], float heading,
 
     vec3 look = {
         car_pos[0] + fwd[0] * 4.0f,
-        car_pos[1] + 0.8f,
+        car_pos[1] + s_look_height,
         car_pos[2] + fwd[2] * 4.0f,
     };
 
