@@ -1,12 +1,12 @@
-#ifndef GFX_H
-#define GFX_H
+#ifndef ISLAND_BACKEND_DESKTOP_GFX_GL_H
+#define ISLAND_BACKEND_DESKTOP_GFX_GL_H
 
 #include <glad/glad.h>
 
 /*
- * Fixed-function state descriptor. Passes declare the state they need; gfx_set()
- * applies only what differs from the current state, so a pass can never inherit
- * a surprise from the pass before it.
+ * Fixed-function state descriptor. Draws declare the state they need; gfx_set()
+ * applies only what differs from the current state, so a draw can never inherit
+ * a surprise from the draw before it.
  */
 typedef struct {
     int lighting;
@@ -28,7 +28,7 @@ void gfx_init(void);
 /* Applies the delta between the current state and *want. */
 void gfx_set(const GfxState* want);
 
-/* Current state, for passes that want to copy it and change a field or two. */
+/* Current state, for callers that want to copy it and change a field or two. */
 const GfxState* gfx_current(void);
 
 /* Save the current state, then apply *modified. gfx_pop() restores the save. */
@@ -42,10 +42,10 @@ void gfx_pop(void);
 void gfx_bind_texture(GLuint tex);
 
 /*
- * Window-space drawing: sets an ortho projection over `width` x `height` pixels
+ * Normalised screen-space drawing: sets an ortho projection over [0,1]x[0,1]
  * with the origin at the bottom-left. Pair every begin with an end.
  */
-void gfx_screen_begin(int width, int height);
+void gfx_screen_begin_unit(void);
 void gfx_screen_end(void);
 
 #endif

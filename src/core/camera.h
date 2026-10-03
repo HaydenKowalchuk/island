@@ -1,5 +1,5 @@
-#ifndef CAMERA_H
-#define CAMERA_H
+#ifndef ISLAND_CORE_CAMERA_H
+#define ISLAND_CORE_CAMERA_H
 
 #include <stdbool.h>
 #include <cglm/cglm.h>

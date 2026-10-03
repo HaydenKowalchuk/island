@@ -8,11 +8,6 @@ project('island', 'c',
 
 cc = meson.get_compiler('c')
 
-add_project_arguments(
-    '-DGLFW_INCLUDE_NONE',
-    language: 'c',
-)
-
 # Windowing / input. Prefer a system GLFW, fall back to the bundled wrap.
 glfw_dep = dependency('glfw3', required: false)
 if not glfw_dep.found()
@@ -31,6 +26,8 @@ endif
 
 math_dep = cc.find_library('m', required: false)
 
-core_deps = [glad_dep, glfw_dep, cglm_dep, math_dep]
-
 subdir('src')
+
+# Layering guard: src/core must stay platform-agnostic (see the task's rules).
+bash = find_program('bash')
+test('layering', bash, args: [files('scripts/check_layering.sh')])

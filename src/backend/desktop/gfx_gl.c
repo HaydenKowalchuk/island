@@ -1,4 +1,4 @@
-#include "gfx.h"
+#include "gfx_gl.h"
 
 #include <string.h>
 
@@ -57,7 +57,7 @@ void gfx_init(void) {
     s_stack_depth = 0;
 
     /*
-     * A 1x1 white texture is the implicit texture whenever a pass enables
+     * A 1x1 white texture is the implicit texture whenever a draw enables
      * GL_TEXTURE_2D without binding its own. GL_MODULATE with white is the
      * identity, so untextured geometry keeps its vertex colour instead of
      * sampling the incomplete default texture object (which renders nothing).
@@ -88,7 +88,7 @@ static void set_enabled(GLenum cap, int want, int* current) {
 
 /*
  * Light table and lighting model. Fixed-function lights live in GL state, so they
- * are configured once here and every lit pass reuses them.
+ * are configured once here and every lit draw reuses them.
  */
 static void setup_lights(void) {
     GLfloat ambient0[4]  = { 0.30f, 0.30f, 0.28f, 1.0f };
@@ -196,11 +196,11 @@ void gfx_bind_texture(GLuint tex) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, s_current.filter);
 }
 
-void gfx_screen_begin(int width, int height) {
+void gfx_screen_begin_unit(void) {
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
-    glOrtho(0.0, (double)width, 0.0, (double)height, -1.0, 1.0);
+    glOrtho(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
 
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();

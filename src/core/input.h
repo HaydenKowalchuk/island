@@ -1,9 +1,13 @@
-#ifndef INPUT_H
-#define INPUT_H
+#ifndef ISLAND_CORE_INPUT_H
+#define ISLAND_CORE_INPUT_H
 
 #include <stdbool.h>
 #include <stdint.h>
 
+/*
+ * Platform-agnostic input contract. Backends translate their native events
+ * (GLFW keys, PSP pad, VMU) into named actions and feed them here.
+ */
 typedef enum {
     ACT_THROTTLE,
     ACT_BRAKE,
@@ -26,19 +30,20 @@ typedef struct {
     float mouse_dy;
 } InputState;
 
-/* Registers the GLFW callbacks that feed the input manager. */
+/* Resets input state. Call once at startup. */
 void input_init(void);
+
+/* Backend event injection. */
+void input_event_key(Action action, bool down);
+void input_event_mouse(float dx, float dy);
 
 /*
  * Begins a logic tick: clears the edge flags and the accumulated mouse delta.
- * Call once per fixed tick, before polling.
+ * Call once per fixed tick, before folding events.
  */
 void input_begin_frame(void);
 
-/*
- * Folds pending GLFW events into the state. Call once per fixed tick, after
- * glfwPollEvents().
- */
+/* Folds injected events into the state. Call once per fixed tick. */
 void input_poll(void);
 
 const InputState* input_state(void);
@@ -47,7 +52,7 @@ bool input_pressed(Action a);
 bool input_released(Action a);
 
 /* Axis helpers built on the raw action state. */
-float input_axis_steer(void);  /* -1 left .. +1 right */
+float input_axis_steer(void);    /* -1 left .. +1 right */
 float input_axis_throttle(void); /* -1 brake .. +1 throttle */
 
 #endif
