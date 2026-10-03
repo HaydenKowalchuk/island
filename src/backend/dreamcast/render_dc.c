@@ -415,11 +415,11 @@ void render_present(int fb_w, int fb_h) {
 
   pvr_set_bg_color(frame->clear[0], frame->clear[1], frame->clear[2]);
 
-  // pvr_wait_sync();
+  /* Wait for the previous frame's render before starting a new scene. */
+  pvr_wait_ready();
   pvr_scene_begin();
   dc_submit_list(PVR_LIST_OP_POLY, frame);
   dc_submit_list(PVR_LIST_TR_POLY, frame);
   dc_submit_list(PVR_LIST_PT_POLY, frame);
   pvr_scene_finish();
-  // pvr_scene_end();
 }
