@@ -7,6 +7,7 @@ backend_inc = include_directories('backend/desktop')
 
 core_sources = files(
     'core/camera.c',
+    'core/car.c',
     'core/chase_cam.c',
     'core/game.c',
     'core/input.c',
@@ -90,3 +91,11 @@ chase_cam_test = executable('chase-cam-test',
     dependencies: [cglm_dep, math_dep],
     install: false)
 test('chase-cam', chase_cam_test)
+
+# GL-free behaviour test for the hover-car physics (island1-9n0n).
+car_test = executable('car-test',
+    files('../tests/car_test.c', 'core/car.c'),
+    include_directories: [core_inc],
+    dependencies: [cglm_dep, math_dep],
+    install: false)
+test('car', car_test)

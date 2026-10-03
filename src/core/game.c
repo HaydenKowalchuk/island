@@ -7,6 +7,7 @@
 #include <cglm/cglm.h>
 
 #include "camera.h"
+#include "car.h"
 #include "chase_cam.h"
 #include "input.h"
 #include "mesh.h"
@@ -35,21 +36,13 @@ static Mesh s_car;
 static Mesh s_parcel;
 
 /*
- * Chase camera plus a minimal hover-car state it follows. This driving model is
- * a stand-in for island1-9n0n (real physics) and island1-9gio (bob/bank); it
- * exists so the camera has something to track and the feel can be tuned.
+ * Chase camera plus the hover car it follows. The driving model lives in car.c
+ * (island1-9n0n); s_bank is presentation-only lean (island1-9gio will extend
+ * this into bob/pitch).
  */
 static ChaseCam s_chase;
-
-typedef struct {
-  vec3 pos;      /* world position; y = water level */
-  float heading; /* radians; forward = (sin(h), 0, cos(h)) */
-  float speed;   /* units/s (signed) */
-  float speed_kmh;
-  float bank; /* radians; leans into the turn */
-} CarState;
-
 static CarState s_veh;
+static float s_bank = 0.0f; /* radians; leans into the turn */
 
 /*
  * Player mode (island1-zku4): the player is either driving the hover car or
@@ -390,15 +383,12 @@ void game_init(void) {
   s_mode = MODE_DRIVE;
 
   /* Start parked on the main island, facing the resident. */
-  s_veh.pos[0] = CAR_START_X;
-  s_veh.pos[2] = CAR_START_Z;
-  s_veh.heading = 0.0f;
-  s_veh.speed = 0.0f;
-  s_veh.speed_kmh = 0.0f;
-  s_veh.bank = 0.0f;
+  car_init(&s_veh, CAR_START_X, CAR_START_Z, 0.0f);
+  s_bank = 0.0f;
   {
     float g = terrain_height_at(s_veh.pos[0], s_veh.pos[2]);
     s_veh.pos[1] = (g > 0.0f) ? g + 0.25f : 0.0f;
+    s_veh.on_water = (g <= 0.0f);
   }
   trail_clear();
   apply_cam_framing();
@@ -473,28 +463,19 @@ int game_beacon_active(void) { return s_quest != GAME_QUEST_DONE; }
 const float *game_beacon_pos(void) { return active_target(); }
 
 void game_place_vehicle(float x, float z, float heading) {
-  s_veh.pos[0] = x;
-  s_veh.pos[2] = z;
-  s_veh.heading = heading;
-  s_veh.speed = 0.0f;
-  s_veh.speed_kmh = 0.0f;
-  s_veh.bank = 0.0f;
+  car_init(&s_veh, x, z, heading);
+  s_bank = 0.0f;
 
   float g = terrain_height_at(x, z);
   s_veh.pos[1] = (g > 0.0f) ? g + 0.25f : 0.0f;
+  s_veh.on_water = (g <= 0.0f);
 
   trail_clear();
   chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
 }
 
-/* Minimal arcade driving; replaced by island1-9n0n later. */
-#define CAR_ACCEL 24.0f /* must exceed DRAG * MAX_SPEED to reach top end */
-#define CAR_DRAG 0.55f
-#define CAR_MAX_SPEED 34.0f /* ~122 km/h */
-#define CAR_REVERSE 10.0f
-#define CAR_TURN_RATE 1.9f
-#define CAR_BANK_MAX 0.61f /* radians, ~35 deg aggressive lean (island1-9gio)  \
-                            */
+/* Presentation-only lean; the physics lives in car.c (island1-9n0n). */
+#define CAR_BANK_MAX 0.61f /* radians, ~35 deg aggressive lean (island1-9gio) */
 #define CAR_BANK_RATE 4.0f
 
 static void drive_car(float dt) {
@@ -503,41 +484,28 @@ static void drive_car(float dt) {
                          input_held(ACT_THROTTLE) ? 1.0f : 0.0f);
   float brake =
       fmaxf(input_axis(AX_BRAKE), input_held(ACT_BRAKE) ? 1.0f : 0.0f);
-  float drive = throttle - brake;
   float steer = input_axis(AX_STEER);
 
-  s_veh.speed += drive * CAR_ACCEL * dt;
-  s_veh.speed -= s_veh.speed * CAR_DRAG * dt;
-
-  if (s_veh.speed > CAR_MAX_SPEED)
-    s_veh.speed = CAR_MAX_SPEED;
-  if (s_veh.speed < -CAR_REVERSE)
-    s_veh.speed = -CAR_REVERSE;
-
-  /* Steering bites harder with speed, so the car feels planted when still. */
-  float speed01 = fabsf(s_veh.speed) / CAR_MAX_SPEED;
-  s_veh.heading -= steer * CAR_TURN_RATE * dt * (0.35f + 0.65f * speed01);
-
-  s_veh.pos[0] += sinf(s_veh.heading) * s_veh.speed * dt;
-  s_veh.pos[2] += cosf(s_veh.heading) * s_veh.speed * dt;
-  s_veh.speed_kmh = fabsf(s_veh.speed) * 3.6f;
+  /* Physics reads the surface under the car before it integrates. */
+  float ground = terrain_height_at(s_veh.pos[0], s_veh.pos[2]);
+  car_tick(&s_veh, throttle, brake, steer, ground, dt);
 
   /* Hover just over land; float at sea level over water. */
-  float ground = terrain_height_at(s_veh.pos[0], s_veh.pos[2]);
-  s_veh.pos[1] = (ground > 0.0f) ? ground + 0.25f : 0.0f;
+  float g2 = terrain_height_at(s_veh.pos[0], s_veh.pos[2]);
+  s_veh.pos[1] = (g2 > 0.0f) ? g2 + 0.25f : 0.0f;
 
   /* Ease the bank so the car leans into the turn instead of snapping. */
+  float speed01 = (s_veh.speed_kmh / 3.6f) / CAR_MAX_FWD;
+  if (speed01 > 1.0f)
+    speed01 = 1.0f;
   float bank_target = steer * CAR_BANK_MAX * speed01;
-  s_veh.bank += (bank_target - s_veh.bank) * (1.0f - expf(-CAR_BANK_RATE * dt));
+  s_bank += (bank_target - s_bank) * (1.0f - expf(-CAR_BANK_RATE * dt));
 
   trail_push(s_veh.pos);
 
   if (input_pressed(ACT_DEV_RESET)) {
-    glm_vec3_zero(s_veh.pos);
-    s_veh.heading = 0.0f;
-    s_veh.speed = 0.0f;
-    s_veh.speed_kmh = 0.0f;
-    s_veh.bank = 0.0f;
+    car_init(&s_veh, 0.0f, 0.0f, 0.0f);
+    s_bank = 0.0f;
     trail_clear();
     chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
   }
@@ -583,7 +551,8 @@ static void toggle_vehicle(void) {
       s_player.heading = s_veh.heading;
       s_player.speed_kmh = 0.0f;
       s_player.walk_phase = 0.0f;
-      s_veh.speed = 0.0f;
+      glm_vec3_zero(s_veh.vel);
+      s_veh.yaw_rate = 0.0f;
       s_veh.speed_kmh = 0.0f;
       trail_clear();
       s_mode = MODE_FOOT;
@@ -598,7 +567,8 @@ static void toggle_vehicle(void) {
       return;
 
     s_mode = MODE_DRIVE;
-    s_veh.speed = 0.0f;
+    glm_vec3_zero(s_veh.vel);
+    s_veh.yaw_rate = 0.0f;
     s_veh.speed_kmh = 0.0f;
     trail_clear();
     apply_cam_framing();
@@ -906,7 +876,7 @@ static void emit_car(float t) {
   glm_mat4_identity(world);
   glm_translate(world, (vec3){s_veh.pos[0], s_veh.pos[1] + bob, s_veh.pos[2]});
   glm_rotate(world, s_veh.heading, (vec3){0.0f, 1.0f, 0.0f});
-  glm_rotate(world, s_veh.bank, (vec3){0.0f, 0.0f, 1.0f});
+  glm_rotate(world, s_bank, (vec3){0.0f, 0.0f, 1.0f});
 
   r_mesh(&s_car, (const float *)world, white);
 }
