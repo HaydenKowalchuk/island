@@ -36,8 +36,9 @@ if opt_platform == 'desktop'
   island_exe = executable(
     'island',
     core_sources + backend_sources,
-    include_directories: [core_inc, backend_inc],
-    dependencies: [cglm_dep],
+    include_directories: [core_inc, backend_inc, platform_inc],
+    dependencies: [cglm_dep, platform_deps],
+    c_args: platform_args,
     install: false,
   )
 
@@ -75,15 +76,15 @@ elif opt_platform == 'dreamcast'
     include_directories('/opt/toolchains/dc/kos/kernel/arch/dreamcast/include'),
     include_directories('/opt/toolchains/dc/kos/addons/include'),
   ]
-  exe_name = 'island.elf'
 
   # copy_assets (a .stamp) in the source list forces meson to build the asset
   # copy before the binary, without trying to compile the stamp itself.
   island_exe = executable(
     'island.elf',
     core_sources + backend_sources,
-    include_directories: [core_inc, backend_inc],
-    dependencies: [cglm_dep],
+    include_directories: [core_inc, backend_inc, platform_inc],
+    dependencies: [cglm_dep, platform_deps],
+    c_args: platform_args,
     install: false,
   )
 
