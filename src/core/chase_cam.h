@@ -18,6 +18,16 @@ typedef struct {
 } ChaseCam;
 
 void chase_cam_init(ChaseCam* c, const float car_pos[3], float heading);
+
+/*
+ * Optional terrain-height callback (island1-qvn1): return a large negative value
+ * off the map. The camera is kept at least a little above the ground so it does
+ * not bury itself in a hill. Passing NULL disables the clamp, which is what the
+ * GL-free chase-cam test relies on.
+ */
+typedef float (*ChaseGroundFn)(float x, float z);
+void chase_cam_set_ground(ChaseGroundFn fn);
+
 void chase_cam_update(ChaseCam* c, const float car_pos[3], float heading,
                       float speed_kmh, int width, int height, float dt);
 

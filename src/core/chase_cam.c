@@ -12,6 +12,12 @@
 /* A frame hiccup must not blow up the spring; clamp the integration step. */
 #define CHASE_MAX_DT    (1.0f / 30.0f)
 
+static ChaseGroundFn s_ground = NULL;
+
+void chase_cam_set_ground(ChaseGroundFn fn) {
+    s_ground = fn;
+}
+
 static float angle_wrap(float a) {
     while (a > (float)M_PI)
         a -= 2.0f * (float)M_PI;
@@ -73,10 +79,12 @@ void chase_cam_update(ChaseCam* c, const float car_pos[3], float heading,
         c->pos[i] += c->vel[i] * dt;
     }
 
-    /*
-     * TODO(island1-qvn1): clamp c->pos[1] above terrain_height_at(c->pos) + 1.5f
-     * once the terrain heightfield exists.
-     */
+    /* Keep the camera out of hills (island1-qvn1). */
+    if (s_ground) {
+        float g = s_ground(c->pos[0], c->pos[2]);
+        if (g > -500.0f && c->pos[1] < g + 1.5f)
+            c->pos[1] = g + 1.5f;
+    }
 
     vec3 look = {
         car_pos[0] + fwd[0] * 4.0f,

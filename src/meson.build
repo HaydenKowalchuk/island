@@ -12,6 +12,7 @@ core_sources = files(
     'core/input.c',
     'core/mesh.c',
     'core/render.c',
+    'core/terrain.c',
     'core/texture.c',
 )
 

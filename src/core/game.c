@@ -11,6 +11,7 @@
 #include "input.h"
 #include "mesh.h"
 #include "render.h"
+#include "terrain.h"
 #include "texture.h"
 
 /*
@@ -127,13 +128,16 @@ void game_init(void) {
   s_veh.bank = 0.0f;
   trail_clear();
   chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
+  chase_cam_set_ground(terrain_height_at);
   s_cam_mode = CAM_CHASE;
 
+  terrain_init(1337u);
   build_car();
   build_parcel();
 }
 
 void game_shutdown(void) {
+  terrain_shutdown();
   mesh_destroy(&s_car);
   mesh_destroy(&s_parcel);
 }
@@ -174,6 +178,10 @@ static void drive_car(float dt) {
   s_veh.pos[0] += sinf(s_veh.heading) * s_veh.speed * dt;
   s_veh.pos[2] += cosf(s_veh.heading) * s_veh.speed * dt;
   s_veh.speed_kmh = fabsf(s_veh.speed) * 3.6f;
+
+  /* Hover just over land; float at sea level over water. */
+  float ground = terrain_height_at(s_veh.pos[0], s_veh.pos[2]);
+  s_veh.pos[1] = (ground > 0.0f) ? ground + 0.25f : 0.0f;
 
   /* Ease the bank so the car leans into the turn instead of snapping. */
   float bank_target = steer * CAR_BANK_MAX * speed01;
@@ -511,6 +519,7 @@ void game_render(float frame_dt) {
 
   emit_sky();
   emit_ocean(s_time);
+  terrain_emit();
   emit_wake(s_time);
   emit_car(s_time);
   emit_parcel(s_time);

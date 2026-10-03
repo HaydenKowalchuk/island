@@ -11,6 +11,7 @@
 #include "game.h"
 #include "mesh.h"
 #include "render.h"
+#include "terrain.h"
 
 int main(void) {
     game_init();
@@ -48,6 +49,12 @@ int main(void) {
 
     int ocean_verts = f->pass_verts[R_PASS_OCEAN];
     int vehicle_verts = f->pass_verts[R_PASS_VEHICLE];
+    int terrain_verts = f->pass_verts[R_PASS_TERRAIN];
+
+    /* Terrain (island1-39q6/xf8m): a hill at the centre, open sea off-map. */
+    float hill = terrain_height_at(0.0f, 78.0f);
+    float offmap = terrain_height_at(0.0f, 0.0f);
+    printf("api-smoke: terrain hill=%.1f offmap=%.1f\n", hill, offmap);
 
     game_shutdown();
 
@@ -57,7 +64,9 @@ int main(void) {
         return 1;
     if (mesh_draws == 0 || screen_draws == 0)
         return 1;
-    if (ocean_verts <= 0 || vehicle_verts <= 0)
+    if (ocean_verts <= 0 || vehicle_verts <= 0 || terrain_verts <= 0)
+        return 1;
+    if (hill <= 1.0f || offmap > -100.0f)
         return 1;
 
     return 0;
