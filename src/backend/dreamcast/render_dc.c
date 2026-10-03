@@ -57,6 +57,9 @@ static float s_fog_b;
 /* GL projection's near plane, extracted per frame for the W-buffer z. */
 static float s_znear = 0.1f;
 
+/* Bring-up instrumentation: stop printing after this many draws. */
+static int s_dbg_prints = 40;
+
 void render_init(void) {
   /* pvr_init requires a suitable 3D video mode to be active first. */
   vid_set_mode(DM_640x480, PM_RGB565);
@@ -348,13 +351,19 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
   pvr_poly_compile(&hdr, &cxt);
   pvr_prim(&hdr, sizeof(hdr));
 
-  /* Combined matrix proj * view * world (GL column-major). */
+  /* Combined matrix proj * view * world (GL column-major). Recorded draws'
+   * world is unset (zeros — the desktop's recorded path ignores it), so their
+   * verts are already in world space: use the identity. */
   float m[16];
   int screen_space = d->screen_space;
   if (!screen_space) {
+    static const float identity[16] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+                                       0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+                                       0.0f, 0.0f, 0.0f, 1.0f};
+    const float* world = d->mesh ? d->world : identity;
     float pv[16];
     mat_mul(frame->proj, frame->view, pv);
-    mat_mul(pv, d->world, m);
+    mat_mul(pv, world, m);
   }
 
   int fog = d->fog && frame->fog_enabled && !screen_space;
@@ -402,11 +411,23 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
                              &q[3], &s_scratch[written]);
     }
   }
-  /* R_LINES: the TA has no line primitive; skipped for now (dev-only
-   * draws). Add thin-quad expansion here if lines ever matter on console. */
+    /* R_LINES: the TA has no line primitive; skipped for now (dev-only
+     * draws). Add thin-quad expansion here if lines ever matter on console. */
 
-  if (written > 0)
-    pvr_prim(s_scratch, (unsigned int)written * sizeof(pvr_vertex_t));
+    if (written > 0)
+        pvr_prim(s_scratch, (unsigned int)written * sizeof(pvr_vertex_t));
+
+    /* Bring-up instrumentation: what the ocean/HUD draws actually became. */
+    if (s_dbg_prints > 0 &&
+        (d->pass == R_PASS_OCEAN || d->pass == R_PASS_HUD) && written > 0) {
+        printf("dc: pass=%d prim=%d first=%d cnt=%d ss=%d list=%d w=%d "
+               "v0=(%.1f,%.1f,%.4f) v1=(%.1f,%.1f,%.4f) v2=(%.1f,%.1f,%.4f)\n",
+               (int)d->pass, (int)d->prim, d->first, d->count, d->screen_space,
+               (int)list, written, s_scratch[0].x, s_scratch[0].y,
+               s_scratch[0].z, s_scratch[1].x, s_scratch[1].y, s_scratch[1].z,
+               s_scratch[2].x, s_scratch[2].y, s_scratch[2].z);
+        s_dbg_prints--;
+    }
 }
 
 static void dc_submit_list(pvr_list_t list, const RenderFrame *frame) {
@@ -453,6 +474,11 @@ void render_present(int fb_w, int fb_h) {
    * pvr_scene_begin() (it waits for the previous frame internally), and
    * pvr_wait_ready() before any frame has rendered can stall.
    */
+  if (s_dbg_prints > 0) {
+    printf("dc frame: draws=%d verts=%d znear=%.3f zsky=%.5f\n",
+           frame->draw_count, frame->stat_verts, s_znear,
+           (frame->fog_end > 0.0f) ? s_znear / frame->fog_end : 0.001f);
+  }
   pvr_scene_begin();
   dc_submit_list(PVR_LIST_OP_POLY, frame);
   dc_submit_list(PVR_LIST_TR_POLY, frame);
