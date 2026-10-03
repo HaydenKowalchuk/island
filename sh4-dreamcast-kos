@@ -1,0 +1,24 @@
+[binaries]
+c = '/opt/toolchains/dc/kos/utils/build_wrappers/kos-cc'
+cpp = '/opt/toolchains/dc/kos/utils/build_wrappers/kos-c++'
+ar = '/opt/toolchains/dc/kos/utils/build_wrappers/kos-ar'
+strip = '/opt/toolchains/dc/kos/utils/build_wrappers/kos-strip'
+
+[built-in options]
+c_args = []
+c_link_args = []
+cpp_args = []
+cpp_link_args = []
+prefix = '/opt/toolchains/dc'
+libdir = 'lib'
+bindir = 'bin'
+
+[properties]
+#pkg_config_libdir = '/usr/lib/pkgconfig'
+#pkg_config_path = '/usr/lib/pkgconfig'
+
+[host_machine]
+system = 'dreamcast'
+cpu_family = 'sh4'
+cpu = 'sh4'
+endian = 'little'

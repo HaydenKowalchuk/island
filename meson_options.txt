@@ -1,5 +1,8 @@
-option('platform',
-    type: 'combo',
-    choices: ['desktop', 'psp'],
-    value: 'desktop',
-    description: 'Target platform backend to build')
+option(
+  'platform',
+  type: 'combo',
+  choices: ['desktop', 'psp', 'dreamcast'],
+  value: 'desktop',
+  description: 'Target platform: desktop (GLFW + GL 1.5 fixed-function) or dreamcast (native KOS PVR)',
+  yield: true,
+)
