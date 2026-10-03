@@ -260,9 +260,14 @@ static void emit_sky(void) {
 #define OCEAN_SKEW 0.55f
 #define OCEAN_WAVE_AMP 0.16f
 
-static float hash2(int i, int j) {
-  float n = sinf((float)i * 127.1f + (float)j * 311.7f) * 43758.5453f;
-  return n - floorf(n); /* 0..1 */
+/*
+ * Smooth world-space shade variation. It must be continuous (not a hash), or
+ * the camera-centred grid would pop every time a cell centre crossed an
+ * integer as it slid along with the eye.
+ */
+static float ocean_tint(float x, float z) {
+  return 0.5f + 0.28f * sinf(x * 0.045f + z * 0.028f) +
+         0.22f * sinf(z * 0.071f - x * 0.019f + 1.7f);
 }
 
 static float wave_height(float x, float z, float t) {
@@ -403,8 +408,7 @@ static void emit_ocean(float t) {
         continue;
       s_ocean_drawn++;
 
-      float h = hash2((int)floorf((x0 + x1) * 0.5f),
-                      (int)floorf((z0 + z1) * 0.5f));
+      float h = ocean_tint((x0 + x1) * 0.5f, (z0 + z1) * 0.5f);
       float r = 0.05f + 0.10f * h;
       float g = 0.30f + 0.22f * h;
       float b = 0.42f + 0.20f * h;
