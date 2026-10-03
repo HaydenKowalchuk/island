@@ -13,4 +13,5 @@ fi
 
 meson compile -C "$BUILD" > "$LOG"
 
+export ASSET_DIR="$BUILD/src/assets"
 exec "$BUILD/src/island" "$@"

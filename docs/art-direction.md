@@ -1,9 +1,10 @@
 # Art direction
 
 Transcribed from two reference screenshots by the user (the tooling cannot view
-images, so this document is the contract for all content work). Values are
-provisional until the screenshots are re-checked; keep edits here rather than in
-scattered source constants.
+images, so this document is the contract for all content work). Keep edits here
+rather than in scattered source constants. Palette entries marked "measured" are
+hex values the user sampled from the reference images (2026-10-03); the rest are
+provisional or derived (by multiplier) from the measured set.
 
 Reference read: PS1-era low-poly, hard-edged textures. A low, red car/boat
 hybrid carves across blue-green polygonal water with a sharp white spray wake.
@@ -13,30 +14,30 @@ water's edge. UI chrome in the frames is video-player overlay, not game art.
 
 ## Palette
 
-| Name | Hex | RGB (0-1) | Use |
+| Name | Hex | Source | Use |
 | --- | --- | --- | --- |
-| sky_zenith | `#2E6FD6` | 0.18, 0.44, 0.84 | top of sky gradient |
-| sky_horizon | `#8FC7EA` | 0.56, 0.78, 0.92 | horizon band, fog colour |
-| cloud_lit | `#F2F6F8` | 0.95, 0.96, 0.97 | cloud tops |
-| cloud_shade | `#C2D2DC` | 0.76, 0.82, 0.86 | cloud undersides |
-| water_deep | `#0E454C` | 0.05, 0.27, 0.30 | far water |
-| water_mid | `#14646B` | 0.08, 0.39, 0.42 | mid water |
-| water_shallow | `#25939A` | 0.14, 0.58, 0.60 | near shore |
-| foam | `#EDF6F6` | 0.93, 0.96, 0.96 | wake, breaking water |
-| grass_base | `#4A8A34` | 0.29, 0.54, 0.20 | island surface |
-| grass_dark | `#2F5C22` | 0.18, 0.36, 0.13 | shaded slopes |
-| grass_light | `#69A83F` | 0.41, 0.66, 0.25 | sunlit slopes |
-| tree_canopy | `#3B7A2A` | 0.23, 0.48, 0.16 | blocky trees |
-| sand_dry | `#D9C48A` | 0.85, 0.77, 0.54 | beach |
-| sand_wet | `#A8905C` | 0.66, 0.56, 0.36 | waterline |
-| rock | `#7A7268` | 0.48, 0.45, 0.41 | cliffs, boulders |
-| wood | `#8A5A33` | 0.54, 0.35, 0.20 | dock, posts, crates |
-| wood_dark | `#5E3D22` | 0.37, 0.24, 0.13 | wood shading |
-| metal | `#9AA0A6` | 0.60, 0.63, 0.65 | tank, fittings |
-| car_body | `#C42B22` | 0.77, 0.17, 0.13 | hover car hull |
-| car_body_lit | `#E0392C` | 0.88, 0.22, 0.17 | hull highlight facets |
-| windshield | `#1A2430` | 0.10, 0.14, 0.19 | dark glass |
-| package | `#C8923C` | 0.78, 0.57, 0.24 | parcel |
+| sky_main | `#3BA8EC` | measured | vibrant sky blue, gradient top |
+| sky_horizon | `#89CBF4` | derived (sky_main +40% white) | horizon band, fog colour |
+| cloud | `#FFFFFF` | measured | puffy cumulus bodies |
+| cloud_shade | `#B9C7CE` | provisional | cloud undersides |
+| grass_base | `#488226` | measured | island / hillside surface |
+| grass_dark | `#2F5C22` | provisional | shaded slopes |
+| grass_light | `#69A83F` | provisional | sunlit slopes |
+| tree_canopy | `#3B7A2A` | provisional | blocky trees |
+| water_deep | `#164649` | derived (water_mid x0.62) | far water |
+| water_mid | `#257276` | measured | deep ocean water |
+| water_shallow | `#31999F` | derived (water_mid x1.35) | near shore |
+| foam | `#FFFFFF` | measured | splash, breaking water |
+| sand_dry | `#D9C48A` | provisional | beach |
+| sand_wet | `#A8905C` | provisional | waterline |
+| rock | `#7A7268` | provisional | cliffs, boulders |
+| wood | `#8A5A33` | provisional | dock, posts, crates |
+| wood_dark | `#5E3D22` | provisional | wood shading |
+| metal | `#9AA0A6` | provisional | tank, fittings |
+| car_body | `#B93427` | measured | hover car hull |
+| car_body_lit | `#E74130` | derived (car_body x1.25) | hull highlight facets |
+| windshield | `#2A1622` | measured | dark windshield tint |
+| package | `#C8923C` | provisional | parcel |
 
 ## Textures
 
@@ -46,8 +47,14 @@ water's edge. UI chrome in the frames is video-player overlay, not game art.
   look.
 - Hard edges: no anti-aliasing in the texture itself, palette-quantised colours,
   visible dithering where a gradient is needed.
-- Authored procedurally in `src/textures.c` (see island1-802h) so the repo has
-  no binary assets and the palette above can be tweaked in one place.
+- Authored by `tools/make_textures.py` (seeded, reproducible): palette-quantised
+  seamless PNGs live in `assets/textures/`. Regenerate with
+  `python3 tools/make_textures.py [seed]` after changing the palette.
+- Packaged by meson: the `copy-assets` target copies `assets/` next to the built
+  binary (`<build>/src/assets`); the loader finds them via `ASSET_DIR`
+  (set by `run.sh`; see island1-9rmh).
+- Hull texture is gritty grainy red (high-frequency tone noise), not clean
+  colour bands — matches the reference's pixelated panel finish.
 
 ## Camera
 
@@ -65,7 +72,14 @@ water's edge. UI chrome in the frames is video-player overlay, not game art.
 
 ## Silhouettes
 
-- Car: low wedge, faceted panels, dark windshield, no curves.
+- Car: low, flat-topped profile; sharply sloping front hood; distinct blocky
+  cabin enclosed by the dark windshield; faceted panels, no curves. Gritty
+  pixelated texture on the red body panels (PS1 affine-mapping grain).
+- Wake/splash: sharp jagged vertical spikes and towering triangular plumes
+  shooting up and out behind and beside the vehicle; stark asymmetric white
+  trail against the dark water. Solid chunky pixel blocks, high-contrast flat
+  white — no fluid gradient alpha; stippled pixel noise along outer edges to
+  read as roaring spray (drives island1-5stj).
 - Trees: trunk box plus one or two angled box/cone canopy blocks.
 - Buildings: rectangular boxes, gabled roofs, hard shading.
 - Characters: blocky box humanoids (see island1-urkr).
