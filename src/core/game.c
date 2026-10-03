@@ -75,6 +75,90 @@ static PlayerMode s_mode = MODE_DRIVE;
 static PlayerState s_player;
 static Mesh s_player_mesh;
 
+/* ---- Delivery quest (island1-pkcj) ------------------------------------- */
+
+/*
+ * Minimal sandbox loop requested by the user: a resident on the main island
+ * wants a package that has spawned on one of the outer islets. Pick it up with
+ * E and bring it back to the resident. The full depot/house version (random
+ * recipient, beacon, score text) is island1-draq.
+ */
+#define QUEST_PICKUP_RANGE 4.0f
+#define QUEST_DELIVER_RANGE 4.5f
+#define QUEST_DONE_TIME 1.6f
+#define CAR_START_X 0.0f
+#define CAR_START_Z 58.0f
+
+/* Mirrors terrain.c's island centres so the quest can place things on land. */
+static const float QUEST_ISLANDS[4][2] = {
+    {0.0f, 78.0f},    /* main island: the resident */
+    {74.0f, 134.0f},  /* east islet */
+    {-66.0f, 126.0f}, /* west islet */
+    {20.0f, -74.0f},  /* southern islet */
+};
+
+static GameQuestPhase s_quest = GAME_QUEST_REQUEST;
+static float s_quest_timer = 0.0f;
+static int s_delivered = 0;
+static int s_pickup_island = -1;
+static vec3 s_npc_pos;
+static float s_npc_heading = 0.0f;
+static vec3 s_pkg_pos;
+static unsigned int s_rng = 0x1234567u;
+static Mesh s_pack;
+
+static unsigned int rng_next(void) {
+  s_rng = s_rng * 1664525u + 1013904223u;
+  return s_rng >> 8;
+}
+
+static void quest_place_package(void) {
+  s_pkg_pos[0] = QUEST_ISLANDS[s_pickup_island][0];
+  s_pkg_pos[2] = QUEST_ISLANDS[s_pickup_island][1];
+  float g = terrain_height_at(s_pkg_pos[0], s_pkg_pos[2]);
+  s_pkg_pos[1] = (g > 0.0f ? g : 0.0f) + 0.55f;
+}
+
+static void quest_new_request(void) {
+  int idx;
+  do {
+    idx = 1 + (int)(rng_next() % 3u);
+  } while (idx == s_pickup_island);
+  s_pickup_island = idx;
+  quest_place_package();
+  s_quest = GAME_QUEST_REQUEST;
+}
+
+/* Position of whatever the player is currently controlling. */
+static const float *active_pos(void) {
+  return (s_mode == MODE_FOOT) ? s_player.pos : s_veh.pos;
+}
+
+static void quest_tick(float dt) {
+  const float *ap = active_pos();
+
+  if (s_quest == GAME_QUEST_REQUEST) {
+    float dx = ap[0] - s_pkg_pos[0];
+    float dz = ap[2] - s_pkg_pos[2];
+    if (dx * dx + dz * dz <= QUEST_PICKUP_RANGE * QUEST_PICKUP_RANGE &&
+        input_pressed(ACT_INTERACT))
+      s_quest = GAME_QUEST_CARRY;
+  } else if (s_quest == GAME_QUEST_CARRY) {
+    float dx = ap[0] - s_npc_pos[0];
+    float dz = ap[2] - s_npc_pos[2];
+    if (dx * dx + dz * dz <= QUEST_DELIVER_RANGE * QUEST_DELIVER_RANGE &&
+        input_pressed(ACT_INTERACT)) {
+      s_quest = GAME_QUEST_DONE;
+      s_quest_timer = QUEST_DONE_TIME;
+      s_delivered++;
+    }
+  } else { /* GAME_QUEST_DONE */
+    s_quest_timer -= dt;
+    if (s_quest_timer <= 0.0f)
+      quest_new_request();
+  }
+}
+
 /*
  * Wake trail: the actual recent path of the car in the XZ plane. Recording
  * world-space points (instead of resampling a fake rope every frame) keeps the
@@ -164,21 +248,31 @@ static void build_player(void) {
                (const float[]){0.10f, 0.35f, 0.12f}, shirt);
 }
 
+/* Small pack worn on the player's back while carrying on foot (island1-fhno). */
+static void build_pack(void) {
+  const float brown[4] = {0.45f, 0.30f, 0.16f, 1.0f};
+
+  mesh_make(&s_pack);
+  mesh_add_box(&s_pack, (const float[]){0.0f, 0.0f, 0.0f},
+               (const float[]){0.26f, 0.30f, 0.14f}, brown);
+}
+
 static void apply_cam_framing(void);
 
 void game_init(void) {
   cam_init(&s_cam);
+  s_time = 0.0f;
+  s_debug = 1;
+  s_rng = 0x1234567u;
+  s_delivered = 0;
+  s_pickup_island = -1;
 
-  glm_vec3_zero(s_veh.pos);
-  s_veh.heading = 0.0f;
-  s_veh.speed = 0.0f;
-  s_veh.speed_kmh = 0.0f;
-  s_veh.bank = 0.0f;
-  trail_clear();
-  apply_cam_framing();
-  chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
-  chase_cam_set_ground(terrain_height_at);
-  s_cam_mode = CAM_CHASE;
+  /* Terrain must exist before anything snaps to the ground. */
+  terrain_init(1337u);
+  build_car();
+  build_parcel();
+  build_player();
+  build_pack();
 
   glm_vec3_zero(s_player.pos);
   s_player.heading = 0.0f;
@@ -186,10 +280,33 @@ void game_init(void) {
   s_player.walk_phase = 0.0f;
   s_mode = MODE_DRIVE;
 
-  terrain_init(1337u);
-  build_car();
-  build_parcel();
-  build_player();
+  /* Start parked on the main island, facing the resident. */
+  s_veh.pos[0] = CAR_START_X;
+  s_veh.pos[2] = CAR_START_Z;
+  s_veh.heading = 0.0f;
+  s_veh.speed = 0.0f;
+  s_veh.speed_kmh = 0.0f;
+  s_veh.bank = 0.0f;
+  {
+    float g = terrain_height_at(s_veh.pos[0], s_veh.pos[2]);
+    s_veh.pos[1] = (g > 0.0f) ? g + 0.25f : 0.0f;
+  }
+  trail_clear();
+  apply_cam_framing();
+  chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
+  chase_cam_set_ground(terrain_height_at);
+  s_cam_mode = CAM_CHASE;
+
+  /* The resident stands at the main island; face them back down the slope. */
+  s_npc_pos[0] = QUEST_ISLANDS[0][0];
+  s_npc_pos[2] = QUEST_ISLANDS[0][1];
+  {
+    float g = terrain_height_at(s_npc_pos[0], s_npc_pos[2]);
+    s_npc_pos[1] = (g > 0.0f) ? g + 0.05f : 0.0f;
+  }
+  s_npc_heading = (float)M_PI;
+
+  quest_new_request();
 }
 
 void game_shutdown(void) {
@@ -197,6 +314,7 @@ void game_shutdown(void) {
   mesh_destroy(&s_car);
   mesh_destroy(&s_parcel);
   mesh_destroy(&s_player_mesh);
+  mesh_destroy(&s_pack);
 }
 
 void game_resize(int width, int height) {
@@ -213,6 +331,16 @@ GameMode game_mode(void) {
 const float *game_player_pos(void) { return s_player.pos; }
 
 const float *game_vehicle_pos(void) { return s_veh.pos; }
+
+GameQuestPhase game_quest_phase(void) { return s_quest; }
+
+int game_quest_carried(void) { return s_quest == GAME_QUEST_CARRY; }
+
+int game_delivered_count(void) { return s_delivered; }
+
+const float *game_npc_pos(void) { return s_npc_pos; }
+
+const float *game_package_pos(void) { return s_pkg_pos; }
 
 void game_place_vehicle(float x, float z, float heading) {
   s_veh.pos[0] = x;
@@ -424,6 +552,8 @@ void game_tick(float dt) {
   } else {
     drive_car(dt);
   }
+
+  quest_tick(dt);
 }
 
 /* ---- Frame recording -------------------------------------------------- */
@@ -666,22 +796,67 @@ static void emit_player(float t) {
   r_mesh(&s_player_mesh, (const float *)world, white);
 }
 
-/* A textured parcel spinning slightly ahead of the car. */
+/*
+ * The parcel: waiting on the pickup islet (spinning, hovering), strapped to the
+ * car's rear deck while driving, or hidden on foot in favour of the backpack.
+ */
 static void emit_parcel(float t) {
+  if (s_quest == GAME_QUEST_DONE)
+    return;
+  if (s_quest == GAME_QUEST_CARRY && s_mode == MODE_FOOT)
+    return;
+
   r_pass(R_PASS_PROPS);
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-  float fwd[3] = {sinf(s_veh.heading), 0.0f, cosf(s_veh.heading)};
 
   mat4 world;
   glm_mat4_identity(world);
-  glm_translate(world, (vec3){
-                           s_veh.pos[0] + fwd[0] * 5.0f,
-                           1.5f + 0.25f * sinf(t * 2.0f),
-                           s_veh.pos[2] + fwd[2] * 5.0f,
-                       });
-  glm_rotate(world, t * 0.8f, (vec3){0.0f, 1.0f, 0.0f});
+
+  if (s_quest == GAME_QUEST_CARRY) {
+    glm_translate(world, (vec3){s_veh.pos[0], s_veh.pos[1], s_veh.pos[2]});
+    glm_rotate(world, s_veh.heading, (vec3){0.0f, 1.0f, 0.0f});
+    glm_translate(world, (vec3){0.0f, 1.05f, -0.45f});
+    glm_rotate(world, t * 0.4f, (vec3){0.0f, 1.0f, 0.0f});
+  } else {
+    glm_translate(world,
+                  (vec3){s_pkg_pos[0], s_pkg_pos[1] + 0.18f * sinf(t * 2.0f),
+                         s_pkg_pos[2]});
+    glm_rotate(world, t * 0.8f, (vec3){0.0f, 1.0f, 0.0f});
+  }
 
   r_mesh(&s_parcel, (const float *)world, white);
+}
+
+/* The resident who requests the package; a humanoid in a warmer outfit. */
+static void emit_npc(float t) {
+  (void)t;
+  r_pass(R_PASS_PROPS);
+  const float tint[4] = {0.85f, 1.0f, 0.80f, 1.0f};
+
+  mat4 world;
+  glm_mat4_identity(world);
+  glm_translate(world, s_npc_pos);
+  glm_rotate(world, s_npc_heading, (vec3){0.0f, 1.0f, 0.0f});
+
+  r_mesh(&s_player_mesh, (const float *)world, tint);
+}
+
+/* The carry read on foot: a small pack on the player's back (island1-fhno). */
+static void emit_pack(float t) {
+  (void)t;
+  if (!(s_quest == GAME_QUEST_CARRY && s_mode == MODE_FOOT))
+    return;
+
+  r_pass(R_PASS_VEHICLE);
+  const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+
+  mat4 world;
+  glm_mat4_identity(world);
+  glm_translate(world, s_player.pos);
+  glm_rotate(world, s_player.heading, (vec3){0.0f, 1.0f, 0.0f});
+  glm_translate(world, (vec3){0.0f, 1.05f, -0.22f});
+
+  r_mesh(&s_pack, (const float *)world, white);
 }
 
 /* Foam wake following the car's recorded path, floating just above the waves.
@@ -731,6 +906,8 @@ void game_render(float frame_dt) {
   emit_car(s_time);
   if (s_mode == MODE_FOOT)
     emit_player(s_time);
+  emit_npc(s_time);
+  emit_pack(s_time);
   emit_parcel(s_time);
 
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -752,6 +929,36 @@ void game_render(float frame_dt) {
     r_text_2d(12, 54, 1.0f,
               on_land ? "F GET OUT  F3 STATS" : "DRIVE TO LAND TO DISEMBARK",
               white);
+
+  /* Delivery objective (island1-pkcj). */
+  const float *ap = active_pos();
+  float odx, odz;
+  if (s_quest == GAME_QUEST_CARRY) {
+    odx = ap[0] - s_npc_pos[0];
+    odz = ap[2] - s_npc_pos[2];
+  } else {
+    odx = ap[0] - s_pkg_pos[0];
+    odz = ap[2] - s_pkg_pos[2];
+  }
+  float odist = sqrtf(odx * odx + odz * odz);
+
+  if (s_quest == GAME_QUEST_REQUEST) {
+    if (odist <= QUEST_PICKUP_RANGE)
+      snprintf(buf, sizeof(buf), "E PICK UP PACKAGE");
+    else
+      snprintf(buf, sizeof(buf), "PACKAGE  %.0fm", odist);
+    r_text_2d(12, 76, 1.0f, buf, white);
+  } else if (s_quest == GAME_QUEST_CARRY) {
+    if (odist <= QUEST_DELIVER_RANGE)
+      snprintf(buf, sizeof(buf), "E DELIVER TO NPC");
+    else
+      snprintf(buf, sizeof(buf), "NPC  %.0fm", odist);
+    r_text_2d(12, 76, 1.0f, buf, white);
+  } else {
+    r_text_2d(12, 76, 1.0f, "PACKAGE DELIVERED!", white);
+  }
+  snprintf(buf, sizeof(buf), "DELIVERED %d", s_delivered);
+  r_text_2d(12, 94, 1.0f, buf, white);
 
   /* Snapshot after the scene/HUD so the overlay itself is not counted. */
   const RenderFrame *fr = r_frame();

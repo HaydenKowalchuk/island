@@ -28,4 +28,16 @@ const float* game_vehicle_pos(void);
 /* Teleport the parked car (spawn/reset/tests). Snaps it to the ground. */
 void game_place_vehicle(float x, float z, float heading);
 
+/* Delivery quest state (island1-pkcj); read by the HUD and tests. */
+typedef enum {
+  GAME_QUEST_REQUEST, /* package is waiting on an islet */
+  GAME_QUEST_CARRY,   /* picked up, return to the resident */
+  GAME_QUEST_DONE     /* delivered; a new request spawns after a short pause */
+} GameQuestPhase;
+GameQuestPhase game_quest_phase(void);
+int game_quest_carried(void);
+int game_delivered_count(void);
+const float *game_npc_pos(void);
+const float *game_package_pos(void);
+
 #endif

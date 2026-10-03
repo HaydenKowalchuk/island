@@ -67,6 +67,14 @@ mode_test = executable('mode-test',
     install: false)
 test('mode', mode_test)
 
+# GL-free test for the MVP delivery loop (island1-pkcj).
+quest_test = executable('quest-test',
+    files('../tests/quest_test.c') + core_sources,
+    include_directories: [core_inc],
+    dependencies: [cglm_dep, math_dep],
+    install: false)
+test('quest', quest_test)
+
 # GL-free test for the platform-agnostic input contract (actions/axes/edges).
 input_test = executable('input-test',
     files('../tests/input_test.c', 'core/input.c'),
