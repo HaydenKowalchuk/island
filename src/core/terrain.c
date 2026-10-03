@@ -1,30 +1,42 @@
 #include "terrain.h"
 
 #include <math.h>
-#include <stdlib.h>
 
 #include "mesh.h"
 #include "render.h"
 
 /*
- * A single faceted island: a (N+1)^2 heightfield sampled from deterministic
- * value-noise fbm, multiplied by a radial falloff that sinks the rim below the
- * sea so a beach ring forms. Built once into an indexed Mesh and drawn as one
- * terrain pass. No GL here -- Mesh/MeshAPI do all of that.
+ * A few faceted islands built as radial meshes. Each island is a fan from the
+ * summit plus bands between concentric rings, so triangle count follows the
+ * circular coast instead of a bounding square (island1-39q6 note: the old grid
+ * spent most of its tris on flat underwater corners). All islands share one
+ * indexed Mesh drawn as a single terrain pass. No GL here.
  */
 
-#define TERRAIN_N 40     /* cells per axis */
-#define TERRAIN_STEP 3.0f
-#define TERRAIN_CX 0.0f  /* island centre, ahead of the start line */
-#define TERRAIN_CZ 78.0f
-#define TERRAIN_AMP 20.0f
-#define TERRAIN_DROP 34.0f /* how far the rim sinks below sea level */
+#define TERRAIN_ISLAND_COUNT 4
+#define TERRAIN_RINGS 6
+#define TERRAIN_SEGS 14
+#define ISLAND_DROP 30.0f /* how far the rim sinks below sea level */
+#define TWO_PI 6.2831853f
 
-#define TERRAIN_HALF (TERRAIN_N * TERRAIN_STEP * 0.5f)
-#define TERRAIN_VERTS (TERRAIN_N + 1)
+typedef struct {
+    float cx, cz;
+    float radius;
+    float amp;
+    float phase; /* coast wobble offset */
+    unsigned int seed;
+} Island;
 
+/* cx, cz, radius, amp */
+static const float ISLAND_POS[TERRAIN_ISLAND_COUNT][4] = {
+    { 0.0f, 78.0f, 52.0f, 18.0f },   /* main island, ahead of the start */
+    { 74.0f, 134.0f, 30.0f, 12.0f }, /* east islet */
+    { -66.0f, 126.0f, 36.0f, 15.0f },/* west islet */
+    { 20.0f, -74.0f, 26.0f, 10.0f }, /* islet behind the start */
+};
+
+static Island s_islands[TERRAIN_ISLAND_COUNT];
 static Mesh s_mesh;
-static float* s_h; /* (N+1)^2 heightfield, row-major by z then x */
 static int s_built = 0;
 
 /* ---- Deterministic value noise --------------------------------------- */
@@ -73,21 +85,33 @@ static float fbm(float x, float z, unsigned int seed) {
     return sum / norm;
 }
 
-static float terrain_height(float x, float z, unsigned int seed) {
-    float dx = x - TERRAIN_CX;
-    float dz = z - TERRAIN_CZ;
-    float d = sqrtf(dx * dx + dz * dz) / TERRAIN_HALF;
-    float r = d < 0.0f ? 0.0f : (d > 1.0f ? 1.0f : d);
-    /* Cubic falloff keeps a broad plateau and a steep, short shore. */
-    float fall = 1.0f - r * r * r;
+/*
+ * Continuous island height for any distance from the centre: above sea level
+ * inside the wavy coast, dropping smoothly past the rim. Never jumps, so mesh
+ * vertices just outside the coast sink away instead of spiking.
+ */
+static float island_height_raw(const Island* is, float x, float z) {
+    float dx = x - is->cx;
+    float dz = z - is->cz;
+    float dist = sqrtf(dx * dx + dz * dz);
+    float ang = atan2f(dz, dx);
 
-    float n = fbm(x * 0.035f, z * 0.035f, seed);
-    float n2 = fbm(x * 0.090f + 11.0f, z * 0.090f - 7.0f, seed + 31u);
+    /* Wavy coast so islands are not perfect circles. */
+    float wob = 1.0f + 0.16f * sinf(ang * 3.0f + is->phase) +
+                0.09f * sinf(ang * 5.0f + is->phase * 1.7f);
+    float r = dist / (is->radius * wob);
+
+    float n = fbm(x * 0.045f, z * 0.045f, is->seed);
+    float n2 = fbm(x * 0.11f + 11.0f, z * 0.11f - 7.0f, is->seed + 31u);
     float bump = n * 0.7f + n2 * 0.3f;
 
-    float base = fall * TERRAIN_AMP * (0.25f + 0.85f * bump);
-    float shore = (1.0f - fall) * -TERRAIN_DROP;
-    return base + shore;
+    if (r <= 1.0f) {
+        float fall = 1.0f - r * r * r; /* broad plateau, steep shore */
+        float base = fall * is->amp * (0.22f + 0.9f * bump);
+        float shore = (1.0f - fall) * -ISLAND_DROP;
+        return base + shore;
+    }
+    return -(ISLAND_DROP + (r - 1.0f) * ISLAND_DROP);
 }
 
 static void terrain_color(float h, float x, float z, unsigned int seed, float out[4]) {
@@ -114,48 +138,62 @@ void terrain_init(unsigned int seed) {
     if (seed == 0u)
         seed = 1337u;
 
-    const int V = TERRAIN_VERTS;
-    s_h = (float*)malloc(sizeof(float) * (size_t)V * (size_t)V);
-    if (!s_h)
-        return;
-
-    for (int iz = 0; iz < V; iz++) {
-        float z = TERRAIN_CZ - TERRAIN_HALF + (float)iz * TERRAIN_STEP;
-        for (int ix = 0; ix < V; ix++) {
-            float x = TERRAIN_CX - TERRAIN_HALF + (float)ix * TERRAIN_STEP;
-            s_h[iz * V + ix] = terrain_height(x, z, seed);
-        }
+    for (int i = 0; i < TERRAIN_ISLAND_COUNT; i++) {
+        s_islands[i].cx = ISLAND_POS[i][0];
+        s_islands[i].cz = ISLAND_POS[i][1];
+        s_islands[i].radius = ISLAND_POS[i][2];
+        s_islands[i].amp = ISLAND_POS[i][3];
+        s_islands[i].seed = seed + (unsigned int)i * 997u;
+        s_islands[i].phase = (float)(hash_u32(s_islands[i].seed) % 628u) * 0.01f;
     }
 
     mesh_make(&s_mesh);
 
-    for (int iz = 0; iz < TERRAIN_N; iz++) {
-        float z0 = TERRAIN_CZ - TERRAIN_HALF + (float)iz * TERRAIN_STEP;
-        float z1 = z0 + TERRAIN_STEP;
-        for (int ix = 0; ix < TERRAIN_N; ix++) {
-            float x0 = TERRAIN_CX - TERRAIN_HALF + (float)ix * TERRAIN_STEP;
-            float x1 = x0 + TERRAIN_STEP;
+    for (int i = 0; i < TERRAIN_ISLAND_COUNT; i++) {
+        const Island* is = &s_islands[i];
+        float pos[TERRAIN_RINGS][TERRAIN_SEGS][3];
+        float hgt[TERRAIN_RINGS][TERRAIN_SEGS];
 
-            float h00 = s_h[iz * V + ix];
-            float h01 = s_h[(iz + 1) * V + ix];
-            float h11 = s_h[(iz + 1) * V + ix + 1];
-            float h10 = s_h[iz * V + ix + 1];
+        for (int k = 0; k < TERRAIN_RINGS; k++) {
+            float rr = is->radius * ((float)(k + 1) / (float)TERRAIN_RINGS);
+            for (int j = 0; j < TERRAIN_SEGS; j++) {
+                float a = TWO_PI * (float)j / (float)TERRAIN_SEGS;
+                float x = is->cx + cosf(a) * rr;
+                float z = is->cz + sinf(a) * rr;
+                pos[k][j][0] = x;
+                pos[k][j][1] = island_height_raw(is, x, z);
+                pos[k][j][2] = z;
+                hgt[k][j] = pos[k][j][1];
+            }
+        }
 
-            float hmax = fmaxf(fmaxf(h00, h01), fmaxf(h11, h10));
-            if (hmax < -1.5f)
-                continue; /* deep underwater: the ocean plane hides it anyway */
-
-            float hmin = fminf(fminf(h00, h01), fminf(h11, h10));
+        /* Summit fan. (center, p(j1), p(j)) winds +Y. */
+        float ch = island_height_raw(is, is->cx, is->cz);
+        const float center[3] = { is->cx, ch, is->cz };
+        for (int j = 0; j < TERRAIN_SEGS; j++) {
+            int j1 = (j + 1) % TERRAIN_SEGS;
             float color[4];
-            terrain_color((hmax + hmin) * 0.5f, (x0 + x1) * 0.5f,
-                          (z0 + z1) * 0.5f, seed, color);
+            float hc = (ch + hgt[0][j] + hgt[0][j1]) / 3.0f;
+            float mx = (is->cx + pos[0][j][0] + pos[0][j1][0]) / 3.0f;
+            float mz = (is->cz + pos[0][j][2] + pos[0][j1][2]) / 3.0f;
+            terrain_color(hc, mx, mz, is->seed, color);
+            mesh_add_triangle(&s_mesh, center, pos[0][j1], pos[0][j], color);
+        }
 
-            /* CCW seen from above, so the +Y normals face the sky. */
-            const float a[3] = { x0, h00, z0 };
-            const float b[3] = { x0, h01, z1 };
-            const float c[3] = { x1, h11, z1 };
-            const float d[3] = { x1, h10, z0 };
-            mesh_add_quad(&s_mesh, a, b, c, d, color);
+        /* Bands between rings; (inner j, inner j1, outer j1, outer j) winds +Y. */
+        for (int k = 1; k < TERRAIN_RINGS; k++) {
+            for (int j = 0; j < TERRAIN_SEGS; j++) {
+                int j1 = (j + 1) % TERRAIN_SEGS;
+                float color[4];
+                float hc = (hgt[k - 1][j] + hgt[k - 1][j1] + hgt[k][j1] + hgt[k][j]) * 0.25f;
+                float mx = (pos[k - 1][j][0] + pos[k - 1][j1][0] + pos[k][j1][0] +
+                            pos[k][j][0]) * 0.25f;
+                float mz = (pos[k - 1][j][2] + pos[k - 1][j1][2] + pos[k][j1][2] +
+                            pos[k][j][2]) * 0.25f;
+                terrain_color(hc, mx, mz, is->seed, color);
+                mesh_add_quad(&s_mesh, pos[k - 1][j], pos[k - 1][j1], pos[k][j1],
+                              pos[k][j], color);
+            }
         }
     }
 
@@ -164,44 +202,35 @@ void terrain_init(unsigned int seed) {
 
 void terrain_shutdown(void) {
     mesh_destroy(&s_mesh);
-    free(s_h);
-    s_h = NULL;
     s_built = 0;
 }
 
 float terrain_height_at(float x, float z) {
-    if (!s_built || !s_h)
+    if (!s_built)
         return -1000.0f;
 
-    float fx = (x - (TERRAIN_CX - TERRAIN_HALF)) / TERRAIN_STEP;
-    float fz = (z - (TERRAIN_CZ - TERRAIN_HALF)) / TERRAIN_STEP;
-    if (fx < 0.0f || fz < 0.0f || fx >= (float)TERRAIN_N || fz >= (float)TERRAIN_N)
-        return -1000.0f;
-
-    int ix = (int)fx;
-    int iz = (int)fz;
-    float tx = fx - (float)ix;
-    float tz = fz - (float)iz;
-
-    const int V = TERRAIN_VERTS;
-    float h00 = s_h[iz * V + ix];
-    float h10 = s_h[iz * V + ix + 1];
-    float h01 = s_h[(iz + 1) * V + ix];
-    float h11 = s_h[(iz + 1) * V + ix + 1];
-
-    float a = h00 + (h10 - h00) * tx;
-    float b = h01 + (h11 - h01) * tx;
-    return a + (b - a) * tz;
+    float best = -1000.0f;
+    for (int i = 0; i < TERRAIN_ISLAND_COUNT; i++) {
+        const Island* is = &s_islands[i];
+        float dx = x - is->cx;
+        float dz = z - is->cz;
+        if (dx * dx + dz * dz > is->radius * is->radius)
+            continue;
+        float h = island_height_raw(is, x, z);
+        if (h > best)
+            best = h;
+    }
+    return best;
 }
 
 void terrain_normal_at(float x, float z, vec3 out) {
-    const float e = TERRAIN_STEP;
+    const float e = 1.5f;
     float hl = terrain_height_at(x - e, z);
     float hr = terrain_height_at(x + e, z);
     float hd = terrain_height_at(x, z - e);
     float hu = terrain_height_at(x, z + e);
 
-    /* Falling off the map: use the local height so the edge normal stays valid. */
+    /* Off-map sample: fall back to the local height so the normal stays valid. */
     float h = terrain_height_at(x, z);
     if (hl < -500.0f) hl = h;
     if (hr < -500.0f) hr = h;

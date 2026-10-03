@@ -43,6 +43,10 @@ void mesh_destroy(Mesh* m);
 void mesh_add_quad(Mesh* m, const float a[3], const float b[3], const float c[3],
                    const float d[3], const float color[4]);
 
+/* Append one triangle (3 positions, CCW as seen from the front). */
+void mesh_add_triangle(Mesh* m, const float a[3], const float b[3], const float c[3],
+                       const float color[4]);
+
 /* Append an axis-aligned box, outward-wound and per-face shaded. */
 void mesh_add_box(Mesh* m, const float center[3], const float half[3],
                   const float color[4]);

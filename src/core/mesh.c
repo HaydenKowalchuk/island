@@ -128,6 +128,36 @@ void mesh_add_quad(Mesh* m, const float a[3], const float b[3], const float c[3]
     m->indices[m->index_count++] = base + 3;
 }
 
+void mesh_add_triangle(Mesh* m, const float a[3], const float b[3], const float c[3],
+                       const float color[4]) {
+    const float* pts[3] = { a, b, c };
+
+    RVertex* verts = realloc(m->verts, (size_t)(m->vert_count + 3) * sizeof(RVertex));
+    if (!verts)
+        return;
+    m->verts = verts;
+
+    unsigned short* idx = realloc(m->indices,
+                                  (size_t)(m->index_count + 3) * sizeof(unsigned short));
+    if (!idx)
+        return;
+    m->indices = idx;
+
+    static const float TRI_UV[3][2] = { { 0.0f, 0.0f }, { 1.0f, 0.0f }, { 0.5f, 1.0f } };
+
+    unsigned short base = (unsigned short)m->vert_count;
+    for (int i = 0; i < 3; i++) {
+        RVertex* v = &m->verts[m->vert_count++];
+        v->x = pts[i][0]; v->y = pts[i][1]; v->z = pts[i][2];
+        v->r = color[0]; v->g = color[1]; v->b = color[2]; v->a = color[3];
+        v->u = TRI_UV[i][0]; v->v = TRI_UV[i][1];
+    }
+
+    m->indices[m->index_count++] = base;
+    m->indices[m->index_count++] = base + 1;
+    m->indices[m->index_count++] = base + 2;
+}
+
 void mesh_add_box(Mesh* m, const float center[3], const float half[3],
                   const float color[4]) {
     float corner[8][3];
