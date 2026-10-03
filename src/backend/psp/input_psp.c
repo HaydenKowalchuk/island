@@ -11,14 +11,16 @@
  *   L        -> ACT_BOOST                         Square -> ACT_INTERACT
  *   Triangle -> ACT_VEHICLE                       Start  -> ACT_PAUSE
  *   Select   -> ACT_DEV_DEBUG                     Home   -> ACT_QUIT
- *   nub X    -> AX_STEER, nub Y -> AX_LOOK_Y (pan); D-pad steers when centred
+ *   nub X    -> AX_STEER, nub Y -> fwd/back (AX_THROTTLE / AX_BRAKE), so the
+ *              car and the on-foot player both steer and move on one stick;
+ *              D-pad steers when the nub is centred.
  */
 
 #define NUB_CENTER 128
 #define NUB_RANGE 127
 /* ~0.16 of full deflection; below this the nub reads as centred. */
 #define STEER_DEADZONE 0.16f
-#define LOOK_DEADZONE 0.20f
+#define FWD_DEADZONE 0.20f
 
 /* Digital button edges are emitted only on change, like GLFW's key callback. */
 static unsigned int s_prev_buttons;
@@ -74,12 +76,21 @@ void backend_input_poll(void) {
     }
     input_event_axis(AX_STEER, steer);
 
-    /* Camera pan rate; zero when centred, accumulated by the input manager. */
-    input_event_axis(AX_LOOK_Y, nub_axis(pad.Ly, LOOK_DEADZONE));
+    /* No second stick, so the pad has no camera pan; keep the axis at zero. */
+    input_event_axis(AX_LOOK_Y, 0.0f);
 
-    /* Digital throttle/brake on the analog axes the car physics consumes. */
-    input_event_axis(AX_THROTTLE, (b & PSP_CTRL_CROSS) ? 1.0f : 0.0f);
-    input_event_axis(AX_BRAKE, (b & PSP_CTRL_CIRCLE) ? 1.0f : 0.0f);
+    /* Nub up/down drives throttle/brake (up = positive). Combine with the
+     * digital Cross/Circle so the stick alone moves the car or the walking
+     * player. */
+    float fwd = -nub_axis(pad.Ly, FWD_DEADZONE);
+    float throttle = (b & PSP_CTRL_CROSS) ? 1.0f : 0.0f;
+    float brake = (b & PSP_CTRL_CIRCLE) ? 1.0f : 0.0f;
+    if (fwd > throttle)
+        throttle = fwd;
+    if (-fwd > brake)
+        brake = -fwd;
+    input_event_axis(AX_THROTTLE, throttle);
+    input_event_axis(AX_BRAKE, brake);
 
     s_prev_buttons = b;
 }

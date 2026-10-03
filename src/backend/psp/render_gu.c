@@ -346,6 +346,12 @@ void render_present(int fb_w, int fb_h) {
         }
     }
 
+    /* The GE reads vertices/indices from RAM through its own path, so CPU
+     * writes must be written back to memory before the list runs. The static
+     * scratch buffers and malloc'd mesh data are outside the display list that
+     * sceGuFinish flushes, hence the explicit writeback here. */
+    sceKernelDcacheWritebackAll();
+
     sceGuFinish();
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
 
