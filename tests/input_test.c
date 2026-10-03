@@ -47,6 +47,18 @@ int main(void) {
     input_begin_frame();
     assert(feq(input_axis(AX_STEER), 1.0f));
 
+    /* Throttle/brake are absolute analog levels too (triggers on consoles). */
+    input_event_axis(AX_THROTTLE, 0.4f);
+    input_event_axis(AX_BRAKE, 0.0f);
+    input_begin_frame();
+    assert(feq(input_axis(AX_THROTTLE), 0.4f));
+    assert(feq(input_axis(AX_BRAKE), 0.0f));
+    input_event_axis(AX_THROTTLE, 0.0f);
+    input_event_axis(AX_BRAKE, 0.7f);
+    input_begin_frame();
+    assert(feq(input_axis(AX_THROTTLE), 0.0f));
+    assert(feq(input_axis(AX_BRAKE), 0.7f));
+
     /* Look is a per-tick delta: consumed once, then zero. */
     input_event_mouse(2.0f, 3.0f);
     input_begin_frame();

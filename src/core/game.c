@@ -240,11 +240,15 @@ void game_place_vehicle(float x, float z, float heading) {
 #define CAR_BANK_RATE 4.0f
 
 static void drive_car(float dt) {
-  float throttle = (input_held(ACT_THROTTLE) ? 1.0f : 0.0f) -
-                   (input_held(ACT_BRAKE) ? 1.0f : 0.0f);
+  /* Analog triggers feed the axes; the digital actions stay as a fallback. */
+  float throttle = fmaxf(input_axis(AX_THROTTLE),
+                         input_held(ACT_THROTTLE) ? 1.0f : 0.0f);
+  float brake =
+      fmaxf(input_axis(AX_BRAKE), input_held(ACT_BRAKE) ? 1.0f : 0.0f);
+  float drive = throttle - brake;
   float steer = input_axis(AX_STEER);
 
-  s_veh.speed += throttle * CAR_ACCEL * dt;
+  s_veh.speed += drive * CAR_ACCEL * dt;
   s_veh.speed -= s_veh.speed * CAR_DRAG * dt;
 
   if (s_veh.speed > CAR_MAX_SPEED)
@@ -350,8 +354,11 @@ static void toggle_vehicle(void) {
  * (shallow water can be waded at sea level).
  */
 static void walk_player(float dt) {
-  float move = (input_held(ACT_THROTTLE) ? 1.0f : 0.0f) -
-               (input_held(ACT_BRAKE) ? 1.0f : 0.0f);
+  float throttle = fmaxf(input_axis(AX_THROTTLE),
+                         input_held(ACT_THROTTLE) ? 1.0f : 0.0f);
+  float brake =
+      fmaxf(input_axis(AX_BRAKE), input_held(ACT_BRAKE) ? 1.0f : 0.0f);
+  float move = throttle - brake;
   float steer = input_axis(AX_STEER);
 
   s_player.heading -= steer * FOOT_TURN * dt;

@@ -27,8 +27,10 @@ typedef enum {
 } Action;
 
 typedef enum {
-    AX_STEER,  /* -1 left .. +1 right (absolute, held) */
-    AX_LOOK_X, /* radians accumulated this tick */
+    AX_STEER,    /* -1 left .. +1 right (absolute, held) */
+    AX_THROTTLE, /*  0..1 accelerate / walk forward (absolute, held) */
+    AX_BRAKE,    /*  0..1 brake / reverse (absolute, held) */
+    AX_LOOK_X,   /* radians accumulated this tick */
     AX_LOOK_Y,
     AXIS_COUNT
 } AxisId;

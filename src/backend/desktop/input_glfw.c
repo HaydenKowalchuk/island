@@ -32,6 +32,14 @@ static const KeyBinding s_bindings[] = {
 static uint8_t s_steer_left;
 static uint8_t s_steer_right;
 
+/*
+ * W/S (and the up/down arrows) feed the analog throttle/brake axes as a full
+ * 0/1 level, alongside the digital ACT_THROTTLE/ACT_BRAKE actions. The console
+ * backends instead map analog triggers onto these same axes (island1-553a).
+ */
+static uint8_t s_throttle;
+static uint8_t s_brake;
+
 static uint8_t s_look_held;
 static float s_mouse_dx;
 static float s_mouse_dy;
@@ -59,6 +67,10 @@ static void key_cb(GLFWwindow* win, int key, int scancode, int action, int mods)
         s_steer_left = down ? 1u : 0u;
     else if (key == GLFW_KEY_D || key == GLFW_KEY_RIGHT)
         s_steer_right = down ? 1u : 0u;
+    else if (key == GLFW_KEY_W || key == GLFW_KEY_UP)
+        s_throttle = down ? 1u : 0u;
+    else if (key == GLFW_KEY_S || key == GLFW_KEY_DOWN)
+        s_brake = down ? 1u : 0u;
 
     Action a = action_from_key(key);
     if (a == ACT_COUNT)
@@ -99,6 +111,8 @@ static void cursor_cb(GLFWwindow* win, double x, double y) {
 void backend_input_init(void) {
     s_steer_left = 0u;
     s_steer_right = 0u;
+    s_throttle = 0u;
+    s_brake = 0u;
     s_look_held = 0u;
     s_mouse_dx = 0.0f;
     s_mouse_dy = 0.0f;
@@ -113,6 +127,9 @@ void backend_input_poll(void) {
     if (s_steer_left)
         steer -= 1.0f;
     input_event_axis(AX_STEER, steer);
+
+    input_event_axis(AX_THROTTLE, s_throttle ? 1.0f : 0.0f);
+    input_event_axis(AX_BRAKE, s_brake ? 1.0f : 0.0f);
 
     if (s_mouse_dx != 0.0f || s_mouse_dy != 0.0f) {
         input_event_mouse(s_mouse_dx, s_mouse_dy);
