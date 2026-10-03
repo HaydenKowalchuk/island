@@ -12,6 +12,7 @@
 #include "input.h"
 #include "lod.h"
 #include "mesh.h"
+#include "pi.h"
 #include "render.h"
 #include "terrain.h"
 #include "texture.h"
@@ -204,10 +205,10 @@ static void quest_tick(float dt) {
       target = atan2f(dx, dz);
 
     float d = target - h->look;
-    while (d > (float)M_PI)
-      d -= 2.0f * (float)M_PI;
-    while (d < -(float)M_PI)
-      d += 2.0f * (float)M_PI;
+    while (d > (float)ISLAND_PI)
+      d -= 2.0f * (float)ISLAND_PI;
+    while (d < -(float)ISLAND_PI)
+      d += 2.0f * (float)ISLAND_PI;
     h->look += d * (1.0f - expf(-6.0f * dt));
   }
 }

@@ -2,12 +2,14 @@
 
 #include <math.h>
 
+#include "pi.h"
+
 #define CAM_DEFAULT_POS   ((vec3){ 0.0f, 2.0f, 8.0f })
 #define CAM_DEFAULT_YAW   (-90.0f)
 #define CAM_DEFAULT_PITCH (-10.0f)
 
 static float deg2rad(float deg) {
-    return deg * (float)(M_PI / 180.0);
+    return deg * (float)(ISLAND_PI / 180.0);
 }
 
 /* Unit vector the camera is looking along, derived from yaw/pitch. */

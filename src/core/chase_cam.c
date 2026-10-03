@@ -2,6 +2,8 @@
 
 #include <math.h>
 
+#include "pi.h"
+
 #define CHASE_W         8.0f   /* spring angular frequency (critical damping) */
 #define CHASE_LAG_RATE  6.0f   /* heading ease rate, 1/s */
 #define CHASE_FOV_BASE  58.0f
@@ -38,10 +40,10 @@ void chase_cam_set_framing(float dist, float height, float look_height) {
 }
 
 static float angle_wrap(float a) {
-    while (a > (float)M_PI)
-        a -= 2.0f * (float)M_PI;
-    while (a < -(float)M_PI)
-        a += 2.0f * (float)M_PI;
+    while (a > (float)ISLAND_PI)
+        a -= 2.0f * (float)ISLAND_PI;
+    while (a < -(float)ISLAND_PI)
+        a += 2.0f * (float)ISLAND_PI;
     return a;
 }
 
@@ -51,7 +53,7 @@ static float clampf(float v, float lo, float hi) {
 
 /* Vertical FOV (radians) that preserves the 16:9 horizontal FOV at `aspect`. */
 static float vfov_for_aspect(float ref_vfov_deg, float aspect) {
-    float half_h = tanf(ref_vfov_deg * (float)(M_PI / 180.0) * 0.5f) *
+    float half_h = tanf(ref_vfov_deg * (float)(ISLAND_PI / 180.0) * 0.5f) *
                    CHASE_REF_ASPECT;
     return 2.0f * atanf(half_h / aspect);
 }

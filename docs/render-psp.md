@@ -40,8 +40,9 @@ Decisions taken while implementing, in priority order:
 - Screen-space HUD/sky uses the GE's `GU_TRANSFORM_3D` with a `[0,1]` ortho and
   depth test disabled, matching GL's bottom-left origin.
 
-Not yet verified: rendering under PPSSPP/hardware (no emulator on this machine),
-so matrix/winding/depth sign parity is reasoned but unconfirmed.
+Verified in PPSSPP: the frame matches the desktop build (passes, winding, depth,
+fog, textures and screen-space HUD all correct), so the matrix/winding/depth
+sign conventions above are confirmed as-is.
 
 ## Hardware overview
 

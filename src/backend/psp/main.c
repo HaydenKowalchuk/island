@@ -56,6 +56,9 @@ int main(int argc, char** argv) {
     render_init();
     game_init();
 
+    /* HUD/text rendering corrupts on real hardware; off until it is sorted. */
+    game_set_hud(0);
+
     float last = now_seconds();
     float accumulator = 0.0f;
 
