@@ -243,6 +243,9 @@ static void trail_push(const float *pos) {
 typedef enum { CAM_CHASE, CAM_FLY } CamMode;
 static CamMode s_cam_mode = CAM_CHASE;
 
+/* Gameplay HUD visibility (island1-fovq); toggled by game_set_hud(). */
+static int s_hud = 1;
+
 /* Dev overlay (F3) and ocean cull counters shown in it. */
 static int s_debug = 1;
 static int s_ocean_drawn = 0;
@@ -473,6 +476,10 @@ void game_place_vehicle(float x, float z, float heading) {
   trail_clear();
   chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
 }
+
+void game_set_hud(int on) { s_hud = on ? 1 : 0; }
+
+int game_hud_enabled(void) { return s_hud; }
 
 /* Presentation-only lean; the physics lives in car.c (island1-9n0n). */
 #define CAR_BANK_MAX 0.61f /* radians, ~35 deg aggressive lean (island1-9gio) */
@@ -1077,57 +1084,59 @@ void game_render(float frame_dt) {
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
   char buf[48];
 
-  int on_land = terrain_height_at(s_veh.pos[0], s_veh.pos[2]) > 0.0f;
-  float pdx = s_player.pos[0] - s_veh.pos[0];
-  float pdz = s_player.pos[2] - s_veh.pos[2];
-  int near_car = pdx * pdx + pdz * pdz <= VEHICLE_REACH * VEHICLE_REACH;
-  float speed_kmh = (s_mode == MODE_FOOT) ? s_player.speed_kmh : s_veh.speed_kmh;
+  if (s_hud) {
+    int on_land = terrain_height_at(s_veh.pos[0], s_veh.pos[2]) > 0.0f;
+    float pdx = s_player.pos[0] - s_veh.pos[0];
+    float pdz = s_player.pos[2] - s_veh.pos[2];
+    int near_car = pdx * pdx + pdz * pdz <= VEHICLE_REACH * VEHICLE_REACH;
+    float speed_kmh = (s_mode == MODE_FOOT) ? s_player.speed_kmh : s_veh.speed_kmh;
 
-  r_pass(R_PASS_HUD);
-  snprintf(buf, sizeof(buf), "%d KMH", (int)(speed_kmh + 0.5f));
-  r_text_2d(12, 10, 2.0f, s_mode == MODE_FOOT ? "ON FOOT" : "CHASE", white);
-  r_text_2d(12, 32, 1.5f, buf, white);
-  if (s_mode == MODE_FOOT)
-    r_text_2d(12, 54, 1.0f, near_car ? "F GET IN" : "WASD WALK  F3 STATS", white);
-  else
-    r_text_2d(12, 54, 1.0f,
-              on_land ? "F GET OUT  F3 STATS" : "DRIVE TO LAND TO DISEMBARK",
-              white);
+    r_pass(R_PASS_HUD);
+    snprintf(buf, sizeof(buf), "%d KMH", (int)(speed_kmh + 0.5f));
+    r_text_2d(12, 10, 2.0f, s_mode == MODE_FOOT ? "ON FOOT" : "CHASE", white);
+    r_text_2d(12, 32, 1.5f, buf, white);
+    if (s_mode == MODE_FOOT)
+      r_text_2d(12, 54, 1.0f, near_car ? "F GET IN" : "WASD WALK  F3 STATS", white);
+    else
+      r_text_2d(12, 54, 1.0f,
+                on_land ? "F GET OUT  F3 STATS" : "DRIVE TO LAND TO DISEMBARK",
+                white);
 
-  /* Delivery objective (island1-pkcj/draq). */
-  const float *ap = active_pos();
-  const float *tp = active_target();
-  float odx = ap[0] - tp[0];
-  float odz = ap[2] - tp[2];
-  float odist = sqrtf(odx * odx + odz * odz);
+    /* Delivery objective (island1-pkcj/draq). */
+    const float *ap = active_pos();
+    const float *tp = active_target();
+    float odx = ap[0] - tp[0];
+    float odz = ap[2] - tp[2];
+    float odist = sqrtf(odx * odx + odz * odz);
 
-  if (s_quest == GAME_QUEST_REQUEST) {
-    if (odist <= QUEST_PICKUP_RANGE)
-      r_text_2d(12, 76, 1.0f, "E PICK UP PACKAGE", white);
-    else {
-      snprintf(buf, sizeof(buf), "DEPOT  %.0fm", odist);
-      r_text_2d(12, 76, 1.0f, buf, white);
+    if (s_quest == GAME_QUEST_REQUEST) {
+      if (odist <= QUEST_PICKUP_RANGE)
+        r_text_2d(12, 76, 1.0f, "E PICK UP PACKAGE", white);
+      else {
+        snprintf(buf, sizeof(buf), "DEPOT  %.0fm", odist);
+        r_text_2d(12, 76, 1.0f, buf, white);
+      }
+    } else if (s_quest == GAME_QUEST_CARRY) {
+      if (odist <= QUEST_DELIVER_RANGE)
+        r_text_2d(12, 76, 1.0f, "E DELIVER TO RESIDENT", white);
+      else {
+        snprintf(buf, sizeof(buf), "HOUSE %d  %.0fm", s_target_house + 1, odist);
+        r_text_2d(12, 76, 1.0f, buf, white);
+      }
     }
-  } else if (s_quest == GAME_QUEST_CARRY) {
-    if (odist <= QUEST_DELIVER_RANGE)
-      r_text_2d(12, 76, 1.0f, "E DELIVER TO RESIDENT", white);
-    else {
-      snprintf(buf, sizeof(buf), "HOUSE %d  %.0fm", s_target_house + 1, odist);
-      r_text_2d(12, 76, 1.0f, buf, white);
-    }
-  }
-  snprintf(buf, sizeof(buf), "DELIVERED %d", s_delivered);
-  r_text_2d(12, 94, 1.0f, buf, white);
+    snprintf(buf, sizeof(buf), "DELIVERED %d", s_delivered);
+    r_text_2d(12, 94, 1.0f, buf, white);
 
-  /* Center toast that fades after a delivery. */
-  if (s_toast_timer > 0.0f) {
-    float a = s_toast_timer / TOAST_TIME;
-    if (a > 1.0f)
-      a = 1.0f;
-    const float toast_col[4] = {1.0f, 0.95f, 0.40f, a};
-    const char *msg = "+1  PACKAGE DELIVERED";
-    int tw = (int)(8.0f * 3.0f * (float)strlen(msg));
-    r_text_2d((s_view_w - tw) / 2, s_view_h / 3, 3.0f, msg, toast_col);
+    /* Center toast that fades after a delivery. */
+    if (s_toast_timer > 0.0f) {
+      float a = s_toast_timer / TOAST_TIME;
+      if (a > 1.0f)
+        a = 1.0f;
+      const float toast_col[4] = {1.0f, 0.95f, 0.40f, a};
+      const char *msg = "+1  PACKAGE DELIVERED";
+      int tw = (int)(8.0f * 3.0f * (float)strlen(msg));
+      r_text_2d((s_view_w - tw) / 2, s_view_h / 3, 3.0f, msg, toast_col);
+    }
   }
 
   /* Snapshot after the scene/HUD so the overlay itself is not counted. */

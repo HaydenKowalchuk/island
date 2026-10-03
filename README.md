@@ -49,16 +49,16 @@ shaders.
 
 ## Controls
 
-| Input | Action |
-| --- | --- |
-| `W` / `S` | throttle / brake |
-| `A` / `D` | steer |
-| `Shift` | boost |
-| `Ctrl` | slow |
-| `RMB` drag | look |
-| `E` | context action (pickup / deliver / talk) |
-| `R` | reset camera |
-| `Esc` | quit |
+| Input      | Action                                   |
+| ---------- | ---------------------------------------- |
+| `W` / `S`  | throttle / brake                         |
+| `A` / `D`  | steer                                    |
+| `Shift`    | boost                                    |
+| `Ctrl`     | slow                                     |
+| `RMB` drag | look                                     |
+| `E`        | context action (pickup / deliver / talk) |
+| `R`        | reset camera                             |
+| `Esc`      | quit                                     |
 
 ## Layout
 
@@ -78,3 +78,7 @@ subprojects/
 
 Work is tracked as pellets issues stored in `.pellets/`. `ready` lists the
 unblocked tasks.
+
+## Compile notes
+
+- meson compile && (cd src && ./island)

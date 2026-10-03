@@ -61,6 +61,16 @@ int main(void) {
     printf("api-smoke: terrain hill=%.1f offmap=%.1f n=(%.2f,%.2f,%.2f)\n", hill,
            offmap, nrm[0], nrm[1], nrm[2]);
 
+    /* HUD flag (island1-fovq): off drops only the HUD pass; scene stays. */
+    int hud_on = f->pass_draws[R_PASS_HUD];
+    game_set_hud(0);
+    game_render(1.0f / 60.0f);
+    int hud_off = f->pass_draws[R_PASS_HUD];
+    int scene_off = f->pass_verts[R_PASS_VEHICLE] + f->pass_verts[R_PASS_TERRAIN];
+    game_set_hud(1);
+    printf("api-smoke: hud draws on=%d off=%d scene=%d\n", hud_on, hud_off,
+           scene_off);
+
     game_shutdown();
 
     /* The scene must produce geometry, at least one mesh draw (the car) and at
@@ -70,6 +80,8 @@ int main(void) {
     if (mesh_draws == 0 || screen_draws == 0)
         return 1;
     if (ocean_verts <= 0 || vehicle_verts <= 0 || terrain_verts <= 0)
+        return 1;
+    if (hud_on <= 0 || hud_off != 0 || scene_off <= 0)
         return 1;
     if (hill <= 1.0f || offmap > -100.0f)
         return 1;

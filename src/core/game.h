@@ -28,6 +28,10 @@ const float* game_vehicle_pos(void);
 /* Teleport the parked car (spawn/reset/tests). Snaps it to the ground. */
 void game_place_vehicle(float x, float z, float heading);
 
+/* Gameplay HUD visibility (island1-fovq); the F3 debug overlay is separate. */
+void game_set_hud(int on);
+int game_hud_enabled(void);
+
 /* Delivery mission state (island1-pkcj/draq); read by the HUD and tests. */
 typedef enum {
   GAME_QUEST_REQUEST, /* package is waiting at the depot */

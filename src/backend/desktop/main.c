@@ -13,6 +13,8 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -107,7 +109,7 @@ static int create_window(void) {
     return 0;
 }
 
-int main(void) {
+int main(int argc, char** argv) {
     if (create_window() != 0)
         return 1;
 
@@ -127,6 +129,14 @@ int main(void) {
      * can request textures and have them uploaded immediately. */
     render_init();
     game_init();
+
+    /* Hide the gameplay HUD with --no-hud or ISLAND_NO_HUD (screenshots, art). */
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--no-hud") == 0)
+            game_set_hud(0);
+    }
+    if (getenv("ISLAND_NO_HUD"))
+        game_set_hud(0);
 
     double last_time = glfwGetTime();
     float accumulator = 0.0f;
