@@ -255,8 +255,9 @@ static void emit_sky(void) {
 
 /* ---- Ocean ------------------------------------------------------------ */
 
-#define OCEAN_N 40
-#define OCEAN_SIZE 400.0f
+#define OCEAN_N 25
+#define OCEAN_R 260.0f
+#define OCEAN_SKEW 0.55f
 #define OCEAN_WAVE_AMP 0.16f
 
 static float hash2(int i, int j) {
@@ -267,6 +268,16 @@ static float hash2(int i, int j) {
 static float wave_height(float x, float z, float t) {
   return OCEAN_WAVE_AMP * sinf(x * 0.12f + t * 1.1f) +
          0.10f * cosf(z * 0.17f - t * 0.8f);
+}
+
+/*
+ * A regular NxN topology mapped through a cubic: cells stay small near the eye
+ * and grow towards the fogged rim. Because it is one continuous grid the
+ * neighbours share vertices, so there are no T-junction cracks.
+ */
+static float ocean_axis(int k) {
+  float u = ((float)k / (float)(OCEAN_N - 1)) * 2.0f - 1.0f; /* -1..1 */
+  return OCEAN_R * (OCEAN_SKEW * u + (1.0f - OCEAN_SKEW) * u * u * u);
 }
 
 /* ---- Frustum culling -------------------------------------------------- */
@@ -324,21 +335,35 @@ static int aabb_in_frustum(const Plane planes[6], float x0, float y0, float z0,
 }
 
 /*
- * One batched draw of a subdivided water plane. Each cell is flat-shaded (its
- * four corners share a colour) which gives the faceted PS1 read; the vertex
- * heights come from a smooth function of world x/z, so neighbouring cells still
- * line up without cracks. Cells outside the view frustum are skipped.
+ * One batched draw of a camera-centred, distance-graded water grid. Cells near
+ * the eye stay small (wave detail) and grow towards the fogged rim, so a fixed
+ * 24x24 topology covers the whole visible sea for a fraction of the old vertex
+ * count. Each cell is flat-shaded (its four corners share a colour) which gives
+ * the faceted PS1 read; heights come from a smooth world-space function so
+ * neighbouring cells line up without cracks. Cells outside the view frustum are
+ * skipped.
  */
 static void emit_ocean(float t) {
-  const float step = OCEAN_SIZE / (float)OCEAN_N;
-  const float half = OCEAN_SIZE * 0.5f;
-
   mat4 proj, view, clip;
   Plane planes[6];
   memcpy(proj, r_frame()->proj, sizeof(proj));
   memcpy(view, r_frame()->view, sizeof(view));
   glm_mat4_mul(proj, view, clip);
   extract_frustum((const float *)clip, planes);
+
+  /* view is column-major; eye = -R^T * t. */
+  const float *vf = (const float *)view;
+  const float ex =
+      -(vf[0] * vf[12] + vf[1] * vf[13] + vf[2] * vf[14]);
+  const float ez =
+      -(vf[8] * vf[12] + vf[9] * vf[13] + vf[10] * vf[14]);
+
+  float ax[OCEAN_N], az[OCEAN_N];
+  for (int k = 0; k < OCEAN_N; k++) {
+    float o = ocean_axis(k);
+    ax[k] = ex + o;
+    az[k] = ez + o;
+  }
 
   r_pass(R_PASS_OCEAN);
   s_ocean_drawn = 0;
@@ -347,30 +372,42 @@ static void emit_ocean(float t) {
   int first = -1;
   int count = 0;
 
-  for (int i = 0; i < OCEAN_N; i++) {
-    float z0 = -half + (float)i * step;
-    float z1 = z0 + step;
+  for (int i = 0; i < OCEAN_N - 1; i++) {
+    float z0 = az[i];
+    float z1 = az[i + 1];
 
-    for (int j = 0; j < OCEAN_N; j++) {
-      float x0 = -half + (float)j * step;
-      float x1 = x0 + step;
+    for (int j = 0; j < OCEAN_N - 1; j++) {
+      float x0 = ax[j];
+      float x1 = ax[j + 1];
 
-      float h = hash2(i * 3, j * 7);
-      float r = 0.05f + 0.10f * h;
-      float g = 0.30f + 0.22f * h;
-      float b = 0.42f + 0.20f * h;
+      s_ocean_total++;
+
+      /* Cells whose nearest point is past the fog are invisible: skip them. */
+      float cdx = fabsf((x0 + x1) * 0.5f - ex) - (x1 - x0) * 0.5f;
+      float cdz = fabsf((z0 + z1) * 0.5f - ez) - (z1 - z0) * 0.5f;
+      if (cdx < 0.0f)
+        cdx = 0.0f;
+      if (cdz < 0.0f)
+        cdz = 0.0f;
+      if (cdx * cdx + cdz * cdz > FOG_END * FOG_END)
+        continue;
 
       float y00 = wave_height(x0, z0, t);
       float y10 = wave_height(x1, z0, t);
       float y11 = wave_height(x1, z1, t);
       float y01 = wave_height(x0, z1, t);
 
-      s_ocean_total++;
       float ymin = fminf(fminf(y00, y10), fminf(y11, y01));
       float ymax = fmaxf(fmaxf(y00, y10), fmaxf(y11, y01));
       if (!aabb_in_frustum(planes, x0, ymin, z0, x1, ymax, z1))
         continue;
       s_ocean_drawn++;
+
+      float h = hash2((int)floorf((x0 + x1) * 0.5f),
+                      (int)floorf((z0 + z1) * 0.5f));
+      float r = 0.05f + 0.10f * h;
+      float g = 0.30f + 0.22f * h;
+      float b = 0.42f + 0.20f * h;
 
       int v = r_vertex(x0, y00, z0, r, g, b, 1.0f, 0.0f, 0.0f);
       if (first < 0)
