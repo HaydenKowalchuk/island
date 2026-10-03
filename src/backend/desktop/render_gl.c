@@ -5,6 +5,7 @@
 #include <glad/glad.h>
 
 #include "gfx_gl.h"
+#include "mesh.h"   /* core Mesh type */
 #include "render.h" /* core RenderAPI: r_frame(), RenderFrame, RDraw, RVertex */
 
 void render_init(void) {
@@ -64,6 +65,44 @@ void render_present(int fb_w, int fb_h) {
 
     for (int i = 0; i < frame->draw_count; i++) {
         const RDraw* d = &frame->draws[i];
+
+        /* Reusable mesh: client-state arrays + transform. Tint is not applied
+         * here yet (bake tints into the mesh or add per-draw colour ops later). */
+        if (d->mesh) {
+            const Mesh* m = d->mesh;
+
+            GfxState gs;
+            draw_state_from(frame, d, &gs);
+            gs.lighting = 0;
+            gs.texture = (m->texture != 0);
+            gfx_push(&gs);
+
+            if (gs.texture)
+                gfx_bind_texture((GLuint)m->texture);
+
+            glPushMatrix();
+            glMultMatrixf(d->world);
+
+            glEnableClientState(GL_VERTEX_ARRAY);
+            glEnableClientState(GL_COLOR_ARRAY);
+            if (gs.texture)
+                glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+
+            const unsigned char* base = (const unsigned char*)m->verts;
+            glVertexPointer(3, GL_FLOAT, sizeof(RVertex), base);
+            glColorPointer(4, GL_FLOAT, sizeof(RVertex), base + 3 * sizeof(float));
+            glTexCoordPointer(2, GL_FLOAT, sizeof(RVertex), base + 7 * sizeof(float));
+            glDrawElements(GL_TRIANGLES, m->index_count, GL_UNSIGNED_SHORT, m->indices);
+
+            if (gs.texture)
+                glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+            glDisableClientState(GL_COLOR_ARRAY);
+            glDisableClientState(GL_VERTEX_ARRAY);
+
+            glPopMatrix();
+            gfx_pop();
+            continue;
+        }
 
         GfxState gs;
         draw_state_from(frame, d, &gs);

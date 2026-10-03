@@ -2,6 +2,8 @@
 
 #include <math.h>
 
+#include <cglm/cglm.h>
+
 #include "camera.h"
 #include "input.h"
 #include "mesh.h"
@@ -19,8 +21,32 @@ static int s_view_h = 720;
 /* Sim time, advanced on the fixed tick and read by the renderer for waves/bob. */
 static float s_time = 0.0f;
 
+/* The hover car, built once and drawn with a per-frame transform. */
+static Mesh s_car;
+
+static void build_car(void) {
+    const float hull[4]  = { 0.42f, 0.06f, 0.07f, 1.0f };
+    const float body[4]  = { 0.72f, 0.11f, 0.10f, 1.0f };
+    const float glass[4] = { 0.06f, 0.08f, 0.12f, 1.0f };
+
+    mesh_make(&s_car);
+    mesh_add_box(&s_car, (const float[]){ 0.0f, 0.34f, 0.0f },
+                 (const float[]){ 0.70f, 0.16f, 1.75f }, hull);
+    mesh_add_box(&s_car, (const float[]){ 0.0f, 0.60f, 0.0f },
+                 (const float[]){ 0.90f, 0.20f, 2.00f }, body);
+    mesh_add_box(&s_car, (const float[]){ 0.0f, 0.94f, -0.20f },
+                 (const float[]){ 0.60f, 0.22f, 0.80f }, glass);
+    mesh_add_box(&s_car, (const float[]){ 0.0f, 0.58f, 1.62f },
+                 (const float[]){ 0.55f, 0.12f, 0.38f }, body);
+}
+
 void game_init(void) {
     cam_init(&s_cam);
+    build_car();
+}
+
+void game_shutdown(void) {
+    mesh_destroy(&s_car);
 }
 
 void game_resize(int width, int height) {
@@ -148,25 +174,14 @@ static void emit_ocean(float t) {
 static void emit_car(float t) {
     const float bob = 0.05f * sinf(t * 1.6f);
     const float roll = 0.04f * sinf(t * 1.1f + 1.0f);
+    const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
-    const float hull[4]  = { 0.42f, 0.06f, 0.07f, 1.0f };
-    const float body[4]  = { 0.72f, 0.11f, 0.10f, 1.0f };
-    const float glass[4] = { 0.06f, 0.08f, 0.12f, 1.0f };
+    mat4 world;
+    glm_mat4_identity(world);
+    glm_translate(world, (vec3){ 0.0f, bob, 0.0f });
+    glm_rotate(world, roll, (vec3){ 0.0f, 0.0f, 1.0f });
 
-    float y = 0.34f + bob;
-
-    mesh_box((const float[]){ 0.0f, y, 0.0f },
-             (const float[]){ 0.70f, 0.16f, 1.75f }, hull, 1, 0);
-
-    /* Body sits slightly rotated by offsetting the top to fake the roll. */
-    mesh_box((const float[]){ roll * 1.5f, y + 0.26f, 0.0f },
-             (const float[]){ 0.90f, 0.20f, 2.00f }, body, 1, 0);
-
-    mesh_box((const float[]){ roll * 2.0f, y + 0.60f, -0.20f },
-             (const float[]){ 0.60f, 0.22f, 0.80f }, glass, 1, 0);
-
-    mesh_box((const float[]){ 0.0f, y + 0.24f, 1.62f },
-             (const float[]){ 0.55f, 0.12f, 0.38f }, body, 1, 0);
+    r_mesh(&s_car, (const float*)world, white);
 }
 
 void game_render(float alpha) {

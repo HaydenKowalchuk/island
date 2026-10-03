@@ -168,6 +168,7 @@ int main(void) {
         glfwSwapBuffers(g_window);
     }
 
+    game_shutdown();
     render_shutdown();
     glfwDestroyWindow(g_window);
     glfwTerminate();

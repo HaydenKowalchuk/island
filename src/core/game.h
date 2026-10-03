@@ -13,6 +13,7 @@
  * presents whatever r_frame() holds.
  */
 void game_init(void);
+void game_shutdown(void);
 void game_resize(int width, int height);
 void game_tick(float dt);
 void game_render(float alpha);

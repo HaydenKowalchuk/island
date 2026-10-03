@@ -5,17 +5,22 @@
 core_inc = include_directories('core')
 backend_inc = include_directories('backend/desktop')
 
-island_sources = files(
+core_sources = files(
     'core/camera.c',
     'core/game.c',
     'core/input.c',
     'core/mesh.c',
     'core/render.c',
+)
+
+backend_sources = files(
     'backend/desktop/main.c',
     'backend/desktop/input_glfw.c',
     'backend/desktop/render_gl.c',
     'backend/desktop/gfx_gl.c',
 )
+
+island_sources = core_sources + backend_sources
 
 # Art assets: <source root>/assets is copied next to the built binary so the
 # game can load textures at runtime (<build root>/src/assets, binary at
@@ -40,3 +45,12 @@ executable('island',
     dependencies: [glad_dep, glfw_dep, cglm_dep, math_dep],
     c_args: ['-DGLFW_INCLUDE_NONE'],
     install: false)
+
+# GL-free smoke test: core must record a full frame with no backend linked at
+# all. This is the "recording stub backend" the RenderAPI task asks for.
+api_smoke = executable('api-smoke',
+    files('../tests/api_smoke.c') + core_sources,
+    include_directories: [core_inc],
+    dependencies: [cglm_dep, math_dep],
+    install: false)
+test('api-smoke', api_smoke)

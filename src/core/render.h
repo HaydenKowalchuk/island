@@ -33,8 +33,14 @@ typedef struct {
 typedef enum { R_TRIANGLES, R_LINES, R_QUADS } RPrim;
 typedef enum { R_CULL_NONE, R_CULL_BACK } RCull;
 
+/* Defined in mesh.h. Forward-declared so RDraw can reference one. */
+struct Mesh;
+
 /*
- * One draw: a contiguous run of vertices plus the state it must be drawn with.
+ * One draw. Either a contiguous run of recorded vertices (`first`/`count`), or a
+ * reference to a reusable `mesh` drawn with `world` (column-major). Mixing both
+ * in one ordered list keeps pass/camera ordering intact.
+ *
  * `screen_space` draws use a normalised [0,1] ortho projection (HUD, sky);
  * otherwise vertices are in world space and the camera matrices apply.
  */
@@ -42,6 +48,10 @@ typedef struct {
     RPrim prim;
     int first;
     int count;
+
+    const struct Mesh* mesh;
+    float world[16];
+
     int screen_space;
     int lit;
     int fog;
@@ -76,6 +86,26 @@ void r_fog(int enabled, const float color[4], float start, float end);
 int  r_vertex(float x, float y, float z,
               float r, float g, float b, float a, float u, float v);
 void r_draw(const RDraw* draw);
+
+/*
+ * Draw a reusable mesh (see mesh.h) transformed by `world` (column-major, may
+ * be NULL for identity). `tint` multiplies the mesh's baked colours and may be
+ * NULL for white.
+ */
+void r_mesh(const struct Mesh* mesh, const float world[16], const float tint[4]);
+
+/*
+ * Camera-facing quad centred at `pos`, sized `w` x `h`, using the camera basis
+ * from the last r_camera() call. Emits ordinary world-space triangles, so any
+ * backend handles it without special support. Good for clouds and spray puffs.
+ */
+void r_billboard(const float pos[3], float w, float h, const float color[4]);
+
+/*
+ * Flat screen-space rectangle in normalised [0,1] coordinates, origin at the
+ * bottom-left. Alpha-blended; `color[3]` controls opacity. HUD primitive.
+ */
+void r_rect_2d(float x, float y, float w, float h, const float color[4]);
 
 /* The frame recorded since r_frame_begin(). Read by the backend. */
 const RenderFrame* r_frame(void);

@@ -22,4 +22,29 @@ void mesh_quad(const float a[3], const float b[3], const float c[3], const float
 void mesh_box(const float center[3], const float half[3], const float color[4],
               int fog, int lit);
 
+/*
+ * A reusable mesh: interleaved vertices plus 16-bit triangle indices, kept in
+ * client memory (no VBOs, no GL). Build once at startup, draw many times with
+ * r_mesh() and a world transform. `texture` is a backend texture handle; 0 means
+ * untextured (vertex colours only).
+ */
+typedef struct Mesh {
+    RVertex* verts;
+    int vert_count;
+    unsigned short* indices;
+    int index_count;
+    int texture;
+} Mesh;
+
+void mesh_make(Mesh* m);
+void mesh_destroy(Mesh* m);
+
+/* Append one quad (4 positions, CCW) as two triangles with a flat colour. */
+void mesh_add_quad(Mesh* m, const float a[3], const float b[3], const float c[3],
+                   const float d[3], const float color[4]);
+
+/* Append an axis-aligned box, outward-wound and per-face shaded. */
+void mesh_add_box(Mesh* m, const float center[3], const float half[3],
+                  const float color[4]);
+
 #endif
