@@ -1,15 +1,10 @@
-# SPDX-FileCopyrightText: 2022 The meson-python developers
-#
-# SPDX-License-Identifier: MIT
-
-.mesonpy-native-file.ini
-.mesonpy/
-docs/_build
-*.pyc
-.cache/
-dist/
-.coverage
-tests/packages/**/.wraplock
-*.lock
-build_*/**
-subprojects/packagecache
+build/
+build_macos/
+build-*/
+subprojects/packagecache/
+subprojects/glfw-3.4/
+subprojects/cglm-*/
+.DS_Store
+build_log.txt
+*.o
+*.d
