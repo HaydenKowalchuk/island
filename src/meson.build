@@ -83,15 +83,15 @@ elif opt_platform == 'dreamcast'
     'island.elf',
     core_sources + backend_sources,
     include_directories: [core_inc, backend_inc, platform_inc],
-    dependencies: [cglm_dep, platform_deps],
+    dependencies: [cglm_dep, platform_deps, math_dep],
     c_args: platform_args,
     install: false,
   )
 
-  # Keep the art next to EBOOT.PBP. The loader also searches host0:/assets and
-  # ms0:/PSP/GAME/island/assets, so putting it here is just convenient.
-  custom_target(
-    'psp-copy-assets',
+  # Keep the art next to the binary; the loader's "assets" fallback is the
+  # path that lands on the disc.
+  dc_copy_assets = custom_target(
+    'dc-copy-assets',
     input: [],
     output: 'assets.stamp',
     command: [
@@ -102,6 +102,29 @@ elif opt_platform == 'dreamcast'
       meson.current_build_dir(),
     ],
     build_by_default: true,
+  )
+
+  # Package into a DiscJuggler image (1ST_READ.BIN + IP.BIN + assets), ready
+  # for Flycast or real hardware. mkdcdisc scrambles the ELF and builds the
+  # default IP.BIN itself; -d keeps the assets/ dir name on the disc, which
+  # matches the loader's fallback. Mirrors the working recipe in the
+  # dc/integrity tree (pkg_dreamcast_cdi.sh).
+  mkdcdisc_prog = find_program('mkdcdisc', required: true)
+  custom_target(
+    'island-cdi',
+    input: island_exe,
+    output: 'island.cdi',
+    command: [
+      mkdcdisc_prog,
+      '-e', island_exe.full_path(),
+      '-d', meson.current_build_dir() / 'assets',
+      '-n', 'island',
+      '-N', '-v', '3',
+      '-o', '@OUTPUT@',
+    ],
+    depends: [island_exe, dc_copy_assets],
+    build_by_default: true,
+    install: false,
   )
 
 elif opt_platform == 'psp'
