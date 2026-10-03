@@ -18,8 +18,8 @@ vendored under `subprojects/glad`.
 ./run.sh
 ```
 
-Build output goes to `build_log.txt`; compiler warnings and errors still go to
-the terminal.
+Build output goes to `.scratch/build_log.txt`; compiler warnings and errors still
+go to the terminal. All transient logs and scratch files belong in `.scratch/`.
 
 Manual equivalent:
 

@@ -13,6 +13,5 @@ docs/_build
 dist/
 .coverage
 .DS_Store
-build_log.txt
 .scratch/
 assets/textures/
