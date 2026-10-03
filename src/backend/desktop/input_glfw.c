@@ -28,6 +28,7 @@ static const KeyBinding s_bindings[] = {
     { GLFW_KEY_RIGHT_CONTROL, ACT_SLOW },
     { GLFW_KEY_E, ACT_CONTEXT },
     { GLFW_KEY_R, ACT_RESET },
+    { GLFW_KEY_F, ACT_TOGGLE_CAM },
     { GLFW_KEY_ESCAPE, ACT_QUIT },
 };
 

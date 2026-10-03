@@ -163,8 +163,7 @@ int main(void) {
 
         glfwGetFramebufferSize(g_window, &fb_w, &fb_h);
 
-        float render_alpha = accumulator / TICK;
-        game_render(render_alpha);
+        game_render(frame_dt);
         render_present(fb_w, fb_h);
 
         glfwSwapBuffers(g_window);

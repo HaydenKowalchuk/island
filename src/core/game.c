@@ -1,10 +1,12 @@
 #include "game.h"
 
 #include <math.h>
+#include <stdio.h>
 
 #include <cglm/cglm.h>
 
 #include "camera.h"
+#include "chase_cam.h"
 #include "input.h"
 #include "mesh.h"
 #include "render.h"
@@ -27,6 +29,25 @@ static Mesh s_car;
 
 /* A textured parcel, bobbing ahead of the car to exercise the texture path. */
 static Mesh s_parcel;
+
+/*
+ * Chase camera plus a minimal hover-car state it follows. This driving model is
+ * a stand-in for island1-9n0n (real physics) and island1-9gio (bob/bank); it
+ * exists so the camera has something to track and the feel can be tuned.
+ */
+static ChaseCam s_chase;
+
+typedef struct {
+    vec3 pos;      /* world position; y = water level */
+    float heading; /* radians; forward = (sin(h), 0, cos(h)) */
+    float speed;   /* units/s (signed) */
+    float speed_kmh;
+} CarState;
+
+static CarState s_veh;
+
+typedef enum { CAM_CHASE, CAM_FLY } CamMode;
+static CamMode s_cam_mode = CAM_CHASE;
 
 static void build_car(void) {
     const float hull[4]  = { 0.42f, 0.06f, 0.07f, 1.0f };
@@ -56,6 +77,14 @@ static void build_parcel(void) {
 
 void game_init(void) {
     cam_init(&s_cam);
+
+    glm_vec3_zero(s_veh.pos);
+    s_veh.heading = 0.0f;
+    s_veh.speed = 0.0f;
+    s_veh.speed_kmh = 0.0f;
+    chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
+    s_cam_mode = CAM_CHASE;
+
     build_car();
     build_parcel();
 }
@@ -72,26 +101,72 @@ void game_resize(int width, int height) {
     }
 }
 
+/* Minimal arcade driving; replaced by island1-9n0n later. */
+#define CAR_ACCEL     9.0f
+#define CAR_DRAG      0.9f
+#define CAR_MAX_SPEED 30.0f
+#define CAR_REVERSE   8.0f
+#define CAR_TURN_RATE 1.9f
+
+static void drive_car(float dt) {
+    float throttle = input_axis_throttle();
+    float steer = input_axis_steer();
+
+    s_veh.speed += throttle * CAR_ACCEL * dt;
+    s_veh.speed -= s_veh.speed * CAR_DRAG * dt;
+
+    if (s_veh.speed > CAR_MAX_SPEED) s_veh.speed = CAR_MAX_SPEED;
+    if (s_veh.speed < -CAR_REVERSE) s_veh.speed = -CAR_REVERSE;
+
+    /* Steering bites harder with speed, so the car feels planted when still. */
+    float speed01 = fabsf(s_veh.speed) / CAR_MAX_SPEED;
+    s_veh.heading += steer * CAR_TURN_RATE * dt * (0.35f + 0.65f * speed01);
+
+    s_veh.pos[0] += sinf(s_veh.heading) * s_veh.speed * dt;
+    s_veh.pos[2] += cosf(s_veh.heading) * s_veh.speed * dt;
+    s_veh.speed_kmh = fabsf(s_veh.speed) * 3.6f;
+
+    if (input_pressed(ACT_RESET)) {
+        glm_vec3_zero(s_veh.pos);
+        s_veh.heading = 0.0f;
+        s_veh.speed = 0.0f;
+        s_veh.speed_kmh = 0.0f;
+        chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
+    }
+}
+
 void game_tick(float dt) {
     const InputState* in = input_state();
 
     s_time += dt;
 
-    /* Look and speed adjustments belong to the sim so they stay in step. */
-    if (input_held(ACT_LOOK))
-        cam_rotate(&s_cam, in->mouse_dx, in->mouse_dy);
+    if (input_pressed(ACT_TOGGLE_CAM)) {
+        s_cam_mode = (s_cam_mode == CAM_CHASE) ? CAM_FLY : CAM_CHASE;
+        if (s_cam_mode == CAM_FLY)
+            cam_reset(&s_cam);
+        else
+            chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
+    }
 
-    if (input_held(ACT_BOOST))
-        s_cam.speed = 40.0f;
-    else if (input_held(ACT_SLOW))
-        s_cam.speed = 3.0f;
-    else
-        s_cam.speed = 10.0f;
+    if (s_cam_mode == CAM_FLY) {
+        /* Free-fly dev camera: look and speed adjustments stay in the sim. */
+        if (input_held(ACT_LOOK))
+            cam_rotate(&s_cam, in->mouse_dx, in->mouse_dy);
 
-    if (input_pressed(ACT_RESET))
-        cam_reset(&s_cam);
+        if (input_held(ACT_BOOST))
+            s_cam.speed = 40.0f;
+        else if (input_held(ACT_SLOW))
+            s_cam.speed = 3.0f;
+        else
+            s_cam.speed = 10.0f;
 
-    cam_move(&s_cam, (int)input_axis_throttle(), (int)input_axis_steer(), 0, dt);
+        if (input_pressed(ACT_RESET))
+            cam_reset(&s_cam);
+
+        cam_move(&s_cam, (int)input_axis_throttle(), (int)input_axis_steer(), 0, dt);
+    } else {
+        drive_car(dt);
+    }
 }
 
 /* ---- Frame recording -------------------------------------------------- */
@@ -189,13 +264,15 @@ static void emit_ocean(float t) {
  */
 static void emit_car(float t) {
     const float bob = 0.05f * sinf(t * 1.6f);
-    const float roll = 0.04f * sinf(t * 1.1f + 1.0f);
+    const float speed01 = fabsf(s_veh.speed) / CAR_MAX_SPEED;
+    const float bank = -input_axis_steer() * 0.08f * speed01;
     const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
     mat4 world;
     glm_mat4_identity(world);
-    glm_translate(world, (vec3){ 0.0f, bob, 0.0f });
-    glm_rotate(world, roll, (vec3){ 0.0f, 0.0f, 1.0f });
+    glm_translate(world, (vec3){ s_veh.pos[0], s_veh.pos[1] + bob, s_veh.pos[2] });
+    glm_rotate(world, s_veh.heading, (vec3){ 0.0f, 1.0f, 0.0f });
+    glm_rotate(world, bank, (vec3){ 0.0f, 0.0f, 1.0f });
 
     r_mesh(&s_car, (const float*)world, white);
 }
@@ -203,10 +280,15 @@ static void emit_car(float t) {
 /* A textured parcel spinning slightly ahead of the car. */
 static void emit_parcel(float t) {
     const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    float fwd[3] = { sinf(s_veh.heading), 0.0f, cosf(s_veh.heading) };
 
     mat4 world;
     glm_mat4_identity(world);
-    glm_translate(world, (vec3){ 3.0f, 1.5f + 0.25f * sinf(t * 2.0f), 1.0f });
+    glm_translate(world, (vec3){
+        s_veh.pos[0] + fwd[0] * 5.0f,
+        1.5f + 0.25f * sinf(t * 2.0f),
+        s_veh.pos[2] + fwd[2] * 5.0f,
+    });
     glm_rotate(world, t * 0.8f, (vec3){ 0.0f, 1.0f, 0.0f });
 
     r_mesh(&s_parcel, (const float*)world, white);
@@ -217,11 +299,17 @@ static void emit_parcel(float t) {
 
 static void emit_wake(float t) {
     float pts[WAKE_POINTS * 3];
+    float fx = sinf(s_veh.heading);
+    float fz = cosf(s_veh.heading);
+    float rx = fz;  /* right vector: forward rotated about Y */
+    float rz = -fx;
 
     for (int i = 0; i < WAKE_POINTS; i++) {
         float s = (float)i;
-        float z = -1.6f - s * 1.5f;
-        float x = 0.7f * sinf(z * 0.45f + t * 1.5f) * (s / (float)(WAKE_POINTS - 1));
+        float back = 1.6f + s * 1.6f;
+        float sway = 0.9f * sinf(s * 0.5f + t * 1.5f) * (s / (float)(WAKE_POINTS - 1));
+        float x = s_veh.pos[0] - fx * back + rx * sway;
+        float z = s_veh.pos[2] - fz * back + rz * sway;
         pts[i * 3 + 0] = x;
         pts[i * 3 + 1] = wave_height(x, z, t) + 0.03f;
         pts[i * 3 + 2] = z;
@@ -231,17 +319,21 @@ static void emit_wake(float t) {
     r_ribbon(pts, WAKE_POINTS, 1.6f, foam);
 }
 
-void game_render(float alpha) {
-    (void)alpha; /* interpolated rendering arrives with island1-fnss. */
-
+void game_render(float frame_dt) {
     r_frame_begin();
     r_viewport(s_view_w, s_view_h);
 
     const float fog_color[4] = { SKY_COLOR_R, SKY_COLOR_G, SKY_COLOR_B, 1.0f };
     r_fog(1, fog_color, FOG_START, FOG_END);
 
-    cam_update(&s_cam, s_view_w, s_view_h);
-    r_camera((const float*)s_cam.view, (const float*)s_cam.proj);
+    if (s_cam_mode == CAM_CHASE) {
+        chase_cam_update(&s_chase, s_veh.pos, s_veh.heading, s_veh.speed_kmh,
+                         s_view_w, s_view_h, frame_dt);
+        r_camera((const float*)s_chase.view, (const float*)s_chase.proj);
+    } else {
+        cam_update(&s_cam, s_view_w, s_view_h);
+        r_camera((const float*)s_cam.view, (const float*)s_cam.proj);
+    }
 
     emit_sky();
     emit_ocean(s_time);
@@ -250,5 +342,10 @@ void game_render(float alpha) {
     emit_parcel(s_time);
 
     const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    r_text_2d(12, 10, 2.0f, "ISLAND", white);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%d KMH", (int)(s_veh.speed_kmh + 0.5f));
+
+    r_text_2d(12, 10, 2.0f, s_cam_mode == CAM_CHASE ? "CHASE" : "FLY", white);
+    r_text_2d(12, 32, 1.5f, buf, white);
+    r_text_2d(12, 54, 1.0f, "WASD DRIVE  F FLY  R RESET", white);
 }

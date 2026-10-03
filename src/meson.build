@@ -7,6 +7,7 @@ backend_inc = include_directories('backend/desktop')
 
 core_sources = files(
     'core/camera.c',
+    'core/chase_cam.c',
     'core/game.c',
     'core/input.c',
     'core/mesh.c',
@@ -56,3 +57,11 @@ api_smoke = executable('api-smoke',
     dependencies: [cglm_dep, math_dep],
     install: false)
 test('api-smoke', api_smoke)
+
+# GL-free behaviour test for the chase camera spring/lag.
+chase_cam_test = executable('chase-cam-test',
+    files('../tests/chase_cam_test.c', 'core/chase_cam.c'),
+    include_directories: [core_inc],
+    dependencies: [cglm_dep, math_dep],
+    install: false)
+test('chase-cam', chase_cam_test)

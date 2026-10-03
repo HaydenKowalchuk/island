@@ -19,7 +19,7 @@ int main(void) {
     for (int i = 0; i < 3; i++)
         game_tick(1.0f / 60.0f);
 
-    game_render(0.0f);
+    game_render(1.0f / 60.0f);
 
     const RenderFrame* f = r_frame();
 
