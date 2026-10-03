@@ -42,7 +42,7 @@ static int s_tex_count = 0;
 
 static const char *asset_root(void) {
   const char *dir = getenv("ASSET_DIR");
-  return (dir && *dir) ? dir : "assets";
+  return (dir && *dir) ? dir : "/cd/assets";
 }
 
 static TextureId load_texture(const char *name) {
