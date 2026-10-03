@@ -28,16 +28,24 @@ const float* game_vehicle_pos(void);
 /* Teleport the parked car (spawn/reset/tests). Snaps it to the ground. */
 void game_place_vehicle(float x, float z, float heading);
 
-/* Delivery quest state (island1-pkcj); read by the HUD and tests. */
+/* Delivery mission state (island1-pkcj/draq); read by the HUD and tests. */
 typedef enum {
-  GAME_QUEST_REQUEST, /* package is waiting on an islet */
-  GAME_QUEST_CARRY,   /* picked up, return to the resident */
+  GAME_QUEST_REQUEST, /* package is waiting at the depot */
+  GAME_QUEST_CARRY,   /* picked up, deliver to the target resident */
   GAME_QUEST_DONE     /* delivered; a new request spawns after a short pause */
 } GameQuestPhase;
 GameQuestPhase game_quest_phase(void);
 int game_quest_carried(void);
 int game_delivered_count(void);
+
+/* Target resident (the current recipient house's resident). */
 const float *game_npc_pos(void);
 const float *game_package_pos(void);
+const float *game_depot_pos(void);
+int game_target_house(void);
+
+/* Objective beacon: where it is and whether it is currently shown. */
+int game_beacon_active(void);
+const float *game_beacon_pos(void);
 
 #endif

@@ -75,58 +75,85 @@ static PlayerMode s_mode = MODE_DRIVE;
 static PlayerState s_player;
 static Mesh s_player_mesh;
 
-/* ---- Delivery quest (island1-pkcj) ------------------------------------- */
+/* ---- Delivery mission loop (island1-pkcj -> island1-draq) -------------- */
 
 /*
- * Minimal sandbox loop requested by the user: a resident on the main island
- * wants a package that has spawned on one of the outer islets. Pick it up with
- * E and bring it back to the resident. The full depot/house version (random
- * recipient, beacon, score text) is island1-draq.
+ * Live sandbox loop: the package waits at the depot on the main island; every
+ * request picks a random recipient house on one of the islands, so the run keeps
+ * moving. A coloured beacon marks the active objective (cyan = pick up, green =
+ * deliver). Full conversation / on-foot handover is island1-38qy.
  */
-#define QUEST_PICKUP_RANGE 4.0f
-#define QUEST_DELIVER_RANGE 4.5f
-#define QUEST_DONE_TIME 1.6f
+#define DEPOT_X 8.0f
+#define DEPOT_Z 82.0f
+#define QUEST_PICKUP_RANGE 4.5f
+#define QUEST_DELIVER_RANGE 5.0f
+#define QUEST_DONE_TIME 1.4f
+#define TOAST_TIME 1.8f
 #define CAR_START_X 0.0f
 #define CAR_START_Z 58.0f
+#define HOUSE_COUNT 4
+#define NPC_LOOK_RANGE 30.0f
 
-/* Mirrors terrain.c's island centres so the quest can place things on land. */
-static const float QUEST_ISLANDS[4][2] = {
-    {0.0f, 78.0f},    /* main island: the resident */
-    {74.0f, 134.0f},  /* east islet */
-    {-66.0f, 126.0f}, /* west islet */
-    {20.0f, -74.0f},  /* southern islet */
+/* Recipient house + the resident standing at its doorway. */
+typedef struct {
+  vec3 base;     /* house origin on the ground (door faces +z of the mesh) */
+  vec3 resident; /* resident world position, in front of the door */
+  float facing;  /* resting heading (outward, away from the door) */
+  float look;    /* eased heading actually drawn */
+} House;
+
+static const float HOUSE_SITES[HOUSE_COUNT][3] = {
+    {-14.0f, 70.0f, 0.0f},   /* main island */
+    {74.0f, 134.0f, 0.0f},   /* east islet */
+    {-66.0f, 126.0f, 0.0f},  /* west islet */
+    {20.0f, -74.0f, 0.0f},   /* southern islet */
 };
+static const float HOUSE_TINT[HOUSE_COUNT][4] = {
+    {1.0f, 0.90f, 0.80f, 1.0f},
+    {0.80f, 1.0f, 0.85f, 1.0f},
+    {1.0f, 1.0f, 0.75f, 1.0f},
+    {0.90f, 0.85f, 1.0f, 1.0f},
+};
+
+static House s_houses[HOUSE_COUNT];
+static vec3 s_depot;
 
 static GameQuestPhase s_quest = GAME_QUEST_REQUEST;
 static float s_quest_timer = 0.0f;
+static float s_toast_timer = 0.0f;
 static int s_delivered = 0;
-static int s_pickup_island = -1;
-static vec3 s_npc_pos;
-static float s_npc_heading = 0.0f;
+static int s_target_house = -1;
 static vec3 s_pkg_pos;
 static unsigned int s_rng = 0x1234567u;
 static Mesh s_pack;
+static Mesh s_house;
+static Mesh s_depot_mesh;
 
 static unsigned int rng_next(void) {
   s_rng = s_rng * 1664525u + 1013904223u;
   return s_rng >> 8;
 }
 
+/* Land height snapped to sea level off-island. */
+static float ground_y(float x, float z) {
+  float g = terrain_height_at(x, z);
+  return (g > 0.0f) ? g : 0.0f;
+}
+
 static void quest_place_package(void) {
-  s_pkg_pos[0] = QUEST_ISLANDS[s_pickup_island][0];
-  s_pkg_pos[2] = QUEST_ISLANDS[s_pickup_island][1];
-  float g = terrain_height_at(s_pkg_pos[0], s_pkg_pos[2]);
-  s_pkg_pos[1] = (g > 0.0f ? g : 0.0f) + 0.55f;
+  s_pkg_pos[0] = s_depot[0];
+  s_pkg_pos[1] = s_depot[1] + 0.55f;
+  s_pkg_pos[2] = s_depot[2];
 }
 
 static void quest_new_request(void) {
   int idx;
   do {
-    idx = 1 + (int)(rng_next() % 3u);
-  } while (idx == s_pickup_island);
-  s_pickup_island = idx;
-  quest_place_package();
+    idx = (int)(rng_next() % (unsigned)HOUSE_COUNT);
+  } while (idx == s_target_house);
+  s_target_house = idx;
   s_quest = GAME_QUEST_REQUEST;
+  quest_place_package();
 }
 
 /* Position of whatever the player is currently controlling. */
@@ -134,28 +161,56 @@ static const float *active_pos(void) {
   return (s_mode == MODE_FOOT) ? s_player.pos : s_veh.pos;
 }
 
+/* The active objective: the depot while requesting, else the target resident. */
+static const float *active_target(void) {
+  return (s_quest == GAME_QUEST_CARRY) ? s_houses[s_target_house].resident
+                                       : s_depot;
+}
+
 static void quest_tick(float dt) {
   const float *ap = active_pos();
 
   if (s_quest == GAME_QUEST_REQUEST) {
-    float dx = ap[0] - s_pkg_pos[0];
-    float dz = ap[2] - s_pkg_pos[2];
+    float dx = ap[0] - s_depot[0];
+    float dz = ap[2] - s_depot[2];
     if (dx * dx + dz * dz <= QUEST_PICKUP_RANGE * QUEST_PICKUP_RANGE &&
         input_pressed(ACT_INTERACT))
       s_quest = GAME_QUEST_CARRY;
   } else if (s_quest == GAME_QUEST_CARRY) {
-    float dx = ap[0] - s_npc_pos[0];
-    float dz = ap[2] - s_npc_pos[2];
+    const float *rp = s_houses[s_target_house].resident;
+    float dx = ap[0] - rp[0];
+    float dz = ap[2] - rp[2];
     if (dx * dx + dz * dz <= QUEST_DELIVER_RANGE * QUEST_DELIVER_RANGE &&
         input_pressed(ACT_INTERACT)) {
       s_quest = GAME_QUEST_DONE;
       s_quest_timer = QUEST_DONE_TIME;
+      s_toast_timer = TOAST_TIME;
       s_delivered++;
     }
   } else { /* GAME_QUEST_DONE */
     s_quest_timer -= dt;
     if (s_quest_timer <= 0.0f)
       quest_new_request();
+  }
+
+  if (s_toast_timer > 0.0f)
+    s_toast_timer -= dt;
+
+  /* Residents ease around to watch whatever the player is controlling. */
+  for (int i = 0; i < HOUSE_COUNT; i++) {
+    House *h = &s_houses[i];
+    float dx = ap[0] - h->resident[0];
+    float dz = ap[2] - h->resident[2];
+    float target = h->facing;
+    if (dx * dx + dz * dz <= NPC_LOOK_RANGE * NPC_LOOK_RANGE)
+      target = atan2f(dx, dz);
+
+    float d = target - h->look;
+    while (d > (float)M_PI)
+      d -= 2.0f * (float)M_PI;
+    while (d < -(float)M_PI)
+      d += 2.0f * (float)M_PI;
+    h->look += d * (1.0f - expf(-6.0f * dt));
   }
 }
 
@@ -257,6 +312,57 @@ static void build_pack(void) {
                (const float[]){0.26f, 0.30f, 0.14f}, brown);
 }
 
+/*
+ * Recipient house (island1-bo69 placeholder): a box with a warm gable roof, a
+ * dark doorway on the +z face and overhanging eaves. Door/shutters read at
+ * distance; the real prefab with a doorway anchor comes later.
+ */
+static void build_house(void) {
+  const float wall[4] = {0.78f, 0.70f, 0.52f, 1.0f};
+  const float roof[4] = {0.42f, 0.24f, 0.18f, 1.0f};
+  const float door[4] = {0.30f, 0.20f, 0.12f, 1.0f};
+
+  mesh_make(&s_house);
+  mesh_add_box(&s_house, (const float[]){0.0f, 1.05f, 0.0f},
+               (const float[]){1.8f, 1.05f, 1.5f}, wall);
+
+  /* Two roof slopes, wound outward. */
+  mesh_add_quad(&s_house, (const float[]){-1.95f, 1.9f, 1.78f},
+                (const float[]){1.95f, 1.9f, 1.78f},
+                (const float[]){1.95f, 2.6f, 0.0f},
+                (const float[]){-1.95f, 2.6f, 0.0f}, roof);
+  mesh_add_quad(&s_house, (const float[]){1.95f, 1.9f, -1.78f},
+                (const float[]){-1.95f, 1.9f, -1.78f},
+                (const float[]){-1.95f, 2.6f, 0.0f},
+                (const float[]){1.95f, 2.6f, 0.0f}, roof);
+
+  /* Gable ends close the triangle under the ridge. */
+  mesh_add_triangle(&s_house, (const float[]){-1.8f, 2.1f, -1.5f},
+                    (const float[]){-1.8f, 2.1f, 1.5f},
+                    (const float[]){-1.8f, 2.6f, 0.0f}, wall);
+  mesh_add_triangle(&s_house, (const float[]){1.8f, 2.1f, 1.5f},
+                    (const float[]){1.8f, 2.1f, -1.5f},
+                    (const float[]){1.8f, 2.6f, 0.0f}, wall);
+
+  mesh_add_box(&s_house, (const float[]){0.0f, 0.7f, 1.52f},
+               (const float[]){0.42f, 0.7f, 0.08f}, door);
+}
+
+/* The package depot: a low pad with a post and a bright sign (island1-draq). */
+static void build_depot(void) {
+  const float pad[4] = {0.72f, 0.70f, 0.62f, 1.0f};
+  const float post[4] = {0.45f, 0.32f, 0.20f, 1.0f};
+  const float sign[4] = {0.92f, 0.76f, 0.26f, 1.0f};
+
+  mesh_make(&s_depot_mesh);
+  mesh_add_box(&s_depot_mesh, (const float[]){0.0f, 0.06f, 0.0f},
+               (const float[]){2.2f, 0.06f, 2.2f}, pad);
+  mesh_add_box(&s_depot_mesh, (const float[]){1.6f, 1.1f, 0.0f},
+               (const float[]){0.10f, 1.1f, 0.10f}, post);
+  mesh_add_box(&s_depot_mesh, (const float[]){1.6f, 2.15f, 0.0f},
+               (const float[]){0.75f, 0.45f, 0.06f}, sign);
+}
+
 static void apply_cam_framing(void);
 
 void game_init(void) {
@@ -265,7 +371,8 @@ void game_init(void) {
   s_debug = 1;
   s_rng = 0x1234567u;
   s_delivered = 0;
-  s_pickup_island = -1;
+  s_target_house = -1;
+  s_toast_timer = 0.0f;
 
   /* Terrain must exist before anything snaps to the ground. */
   terrain_init(1337u);
@@ -273,6 +380,8 @@ void game_init(void) {
   build_parcel();
   build_player();
   build_pack();
+  build_house();
+  build_depot();
 
   glm_vec3_zero(s_player.pos);
   s_player.heading = 0.0f;
@@ -297,14 +406,23 @@ void game_init(void) {
   chase_cam_set_ground(terrain_height_at);
   s_cam_mode = CAM_CHASE;
 
-  /* The resident stands at the main island; face them back down the slope. */
-  s_npc_pos[0] = QUEST_ISLANDS[0][0];
-  s_npc_pos[2] = QUEST_ISLANDS[0][1];
-  {
-    float g = terrain_height_at(s_npc_pos[0], s_npc_pos[2]);
-    s_npc_pos[1] = (g > 0.0f) ? g + 0.05f : 0.0f;
+  /* The package depot on the main island. */
+  s_depot[0] = DEPOT_X;
+  s_depot[2] = DEPOT_Z;
+  s_depot[1] = ground_y(s_depot[0], s_depot[2]);
+
+  /* One resident house per island; the resident stands in front of the door. */
+  for (int i = 0; i < HOUSE_COUNT; i++) {
+    House *h = &s_houses[i];
+    h->base[0] = HOUSE_SITES[i][0];
+    h->base[2] = HOUSE_SITES[i][1];
+    h->base[1] = ground_y(h->base[0], h->base[2]);
+    h->facing = HOUSE_SITES[i][2];
+    h->resident[0] = h->base[0] + sinf(h->facing) * 3.0f;
+    h->resident[2] = h->base[2] + cosf(h->facing) * 3.0f;
+    h->resident[1] = ground_y(h->resident[0], h->resident[2]);
+    h->look = h->facing;
   }
-  s_npc_heading = (float)M_PI;
 
   quest_new_request();
 }
@@ -315,6 +433,8 @@ void game_shutdown(void) {
   mesh_destroy(&s_parcel);
   mesh_destroy(&s_player_mesh);
   mesh_destroy(&s_pack);
+  mesh_destroy(&s_house);
+  mesh_destroy(&s_depot_mesh);
 }
 
 void game_resize(int width, int height) {
@@ -338,9 +458,19 @@ int game_quest_carried(void) { return s_quest == GAME_QUEST_CARRY; }
 
 int game_delivered_count(void) { return s_delivered; }
 
-const float *game_npc_pos(void) { return s_npc_pos; }
+const float *game_npc_pos(void) {
+  return s_houses[s_target_house].resident;
+}
 
 const float *game_package_pos(void) { return s_pkg_pos; }
+
+const float *game_depot_pos(void) { return s_depot; }
+
+int game_target_house(void) { return s_target_house; }
+
+int game_beacon_active(void) { return s_quest != GAME_QUEST_DONE; }
+
+const float *game_beacon_pos(void) { return active_target(); }
 
 void game_place_vehicle(float x, float z, float heading) {
   s_veh.pos[0] = x;
@@ -797,7 +927,7 @@ static void emit_player(float t) {
 }
 
 /*
- * The parcel: waiting on the pickup islet (spinning, hovering), strapped to the
+ * The parcel: waiting on the depot pad (spinning, hovering), strapped to the
  * car's rear deck while driving, or hidden on foot in favour of the backpack.
  */
 static void emit_parcel(float t) {
@@ -827,18 +957,79 @@ static void emit_parcel(float t) {
   r_mesh(&s_parcel, (const float *)world, white);
 }
 
-/* The resident who requests the package; a humanoid in a warmer outfit. */
-static void emit_npc(float t) {
+/* All recipient houses. */
+static void emit_houses(float t) {
   (void)t;
   r_pass(R_PASS_PROPS);
-  const float tint[4] = {0.85f, 1.0f, 0.80f, 1.0f};
+  const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+
+  for (int i = 0; i < HOUSE_COUNT; i++) {
+    mat4 world;
+    glm_mat4_identity(world);
+    glm_translate(world, s_houses[i].base);
+    glm_rotate(world, s_houses[i].facing, (vec3){0.0f, 1.0f, 0.0f});
+    r_mesh(&s_house, (const float *)world, white);
+  }
+}
+
+/* The depot pad and sign. */
+static void emit_depot(float t) {
+  (void)t;
+  r_pass(R_PASS_PROPS);
+  const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 
   mat4 world;
   glm_mat4_identity(world);
-  glm_translate(world, s_npc_pos);
-  glm_rotate(world, s_npc_heading, (vec3){0.0f, 1.0f, 0.0f});
+  glm_translate(world, s_depot);
+  r_mesh(&s_depot_mesh, (const float *)world, white);
+}
 
-  r_mesh(&s_player_mesh, (const float *)world, tint);
+/* The residents, each eased around to watch the player when nearby. */
+static void emit_residents(float t) {
+  (void)t;
+  r_pass(R_PASS_PROPS);
+
+  for (int i = 0; i < HOUSE_COUNT; i++) {
+    mat4 world;
+    glm_mat4_identity(world);
+    glm_translate(world, s_houses[i].resident);
+    glm_rotate(world, s_houses[i].look, (vec3){0.0f, 1.0f, 0.0f});
+    r_mesh(&s_player_mesh, (const float *)world, HOUSE_TINT[i]);
+  }
+}
+
+/*
+ * Objective beacon: stacked camera-facing quads form a soft light shaft, with a
+ * ground ring built as a closed ribbon. Cyan marks the depot, green the target
+ * resident. No-op once delivered.
+ */
+static void emit_beacon(float t) {
+  if (s_quest == GAME_QUEST_DONE)
+    return;
+
+  const float *p = active_target();
+  const int pickup = (s_quest == GAME_QUEST_REQUEST);
+  float color[4] = {pickup ? 0.35f : 0.45f, pickup ? 0.85f : 1.0f,
+                    pickup ? 1.0f : 0.45f, 0.0f};
+
+  r_pass(R_PASS_PARTICLES);
+  for (int k = 0; k < 4; k++) {
+    color[3] = 0.34f - (float)k * 0.07f;
+    float bb[3] = {p[0], p[1] + 1.0f + (float)k * 1.6f + 0.1f * sinf(t * 2.0f),
+                   p[2]};
+    r_billboard(bb, 1.2f - (float)k * 0.18f, 1.8f, color);
+  }
+
+  enum { RING = 12 };
+  float pts[(RING + 1) * 3];
+  for (int i = 0; i <= RING; i++) {
+    float a = (float)i / (float)RING * 6.2831853f;
+    pts[i * 3 + 0] = p[0] + cosf(a) * 1.7f;
+    pts[i * 3 + 1] = p[1] + 0.06f;
+    pts[i * 3 + 2] = p[2] + sinf(a) * 1.7f;
+  }
+  color[3] = 0.55f;
+  r_ribbon(pts, RING + 1, 0.22f, color);
 }
 
 /* The carry read on foot: a small pack on the player's back (island1-fhno). */
@@ -903,12 +1094,15 @@ void game_render(float frame_dt) {
   emit_ocean(s_time);
   terrain_emit();
   emit_wake(s_time);
+  emit_depot(s_time);
+  emit_houses(s_time);
+  emit_residents(s_time);
   emit_car(s_time);
   if (s_mode == MODE_FOOT)
     emit_player(s_time);
-  emit_npc(s_time);
   emit_pack(s_time);
   emit_parcel(s_time);
+  emit_beacon(s_time);
 
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
   char buf[48];
@@ -930,35 +1124,41 @@ void game_render(float frame_dt) {
               on_land ? "F GET OUT  F3 STATS" : "DRIVE TO LAND TO DISEMBARK",
               white);
 
-  /* Delivery objective (island1-pkcj). */
+  /* Delivery objective (island1-pkcj/draq). */
   const float *ap = active_pos();
-  float odx, odz;
-  if (s_quest == GAME_QUEST_CARRY) {
-    odx = ap[0] - s_npc_pos[0];
-    odz = ap[2] - s_npc_pos[2];
-  } else {
-    odx = ap[0] - s_pkg_pos[0];
-    odz = ap[2] - s_pkg_pos[2];
-  }
+  const float *tp = active_target();
+  float odx = ap[0] - tp[0];
+  float odz = ap[2] - tp[2];
   float odist = sqrtf(odx * odx + odz * odz);
 
   if (s_quest == GAME_QUEST_REQUEST) {
     if (odist <= QUEST_PICKUP_RANGE)
-      snprintf(buf, sizeof(buf), "E PICK UP PACKAGE");
-    else
-      snprintf(buf, sizeof(buf), "PACKAGE  %.0fm", odist);
-    r_text_2d(12, 76, 1.0f, buf, white);
+      r_text_2d(12, 76, 1.0f, "E PICK UP PACKAGE", white);
+    else {
+      snprintf(buf, sizeof(buf), "DEPOT  %.0fm", odist);
+      r_text_2d(12, 76, 1.0f, buf, white);
+    }
   } else if (s_quest == GAME_QUEST_CARRY) {
     if (odist <= QUEST_DELIVER_RANGE)
-      snprintf(buf, sizeof(buf), "E DELIVER TO NPC");
-    else
-      snprintf(buf, sizeof(buf), "NPC  %.0fm", odist);
-    r_text_2d(12, 76, 1.0f, buf, white);
-  } else {
-    r_text_2d(12, 76, 1.0f, "PACKAGE DELIVERED!", white);
+      r_text_2d(12, 76, 1.0f, "E DELIVER TO RESIDENT", white);
+    else {
+      snprintf(buf, sizeof(buf), "HOUSE %d  %.0fm", s_target_house + 1, odist);
+      r_text_2d(12, 76, 1.0f, buf, white);
+    }
   }
   snprintf(buf, sizeof(buf), "DELIVERED %d", s_delivered);
   r_text_2d(12, 94, 1.0f, buf, white);
+
+  /* Center toast that fades after a delivery. */
+  if (s_toast_timer > 0.0f) {
+    float a = s_toast_timer / TOAST_TIME;
+    if (a > 1.0f)
+      a = 1.0f;
+    const float toast_col[4] = {1.0f, 0.95f, 0.40f, a};
+    const char *msg = "+1  PACKAGE DELIVERED";
+    int tw = (int)(8.0f * 3.0f * (float)strlen(msg));
+    r_text_2d((s_view_w - tw) / 2, s_view_h / 3, 3.0f, msg, toast_col);
+  }
 
   /* Snapshot after the scene/HUD so the overlay itself is not counted. */
   const RenderFrame *fr = r_frame();
