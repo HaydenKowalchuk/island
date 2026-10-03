@@ -28,6 +28,13 @@ void gfx_init(void) {
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_BLEND);
 
+    /*
+     * Fog defaults to GL_EXP with density 1.0, which swallows everything past
+     * a couple of metres. The passes configure linear start/end distances, so
+     * the mode must match or all world geometry dissolves into the sky.
+     */
+    glFogi(GL_FOG_MODE, GL_LINEAR);
+
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
