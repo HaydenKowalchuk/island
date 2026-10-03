@@ -120,7 +120,7 @@ static void drive_car(float dt) {
 
     /* Steering bites harder with speed, so the car feels planted when still. */
     float speed01 = fabsf(s_veh.speed) / CAR_MAX_SPEED;
-    s_veh.heading += steer * CAR_TURN_RATE * dt * (0.35f + 0.65f * speed01);
+    s_veh.heading -= steer * CAR_TURN_RATE * dt * (0.35f + 0.65f * speed01);
 
     s_veh.pos[0] += sinf(s_veh.heading) * s_veh.speed * dt;
     s_veh.pos[2] += cosf(s_veh.heading) * s_veh.speed * dt;
@@ -265,7 +265,7 @@ static void emit_ocean(float t) {
 static void emit_car(float t) {
     const float bob = 0.05f * sinf(t * 1.6f);
     const float speed01 = fabsf(s_veh.speed) / CAR_MAX_SPEED;
-    const float bank = -input_axis_steer() * 0.08f * speed01;
+    const float bank = input_axis_steer() * 0.08f * speed01;
     const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
     mat4 world;
