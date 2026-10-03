@@ -59,6 +59,14 @@ api_smoke = executable('api-smoke',
     install: false)
 test('api-smoke', api_smoke)
 
+# GL-free test for the platform-agnostic input contract (actions/axes/edges).
+input_test = executable('input-test',
+    files('../tests/input_test.c', 'core/input.c'),
+    include_directories: [core_inc],
+    dependencies: [math_dep],
+    install: false)
+test('input', input_test)
+
 # GL-free behaviour test for the chase camera spring/lag.
 chase_cam_test = executable('chase-cam-test',
     files('../tests/chase_cam_test.c', 'core/chase_cam.c'),

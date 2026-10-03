@@ -160,8 +160,9 @@ void game_resize(int width, int height) {
 #define CAR_BANK_RATE 4.0f
 
 static void drive_car(float dt) {
-  float throttle = input_axis_throttle();
-  float steer = input_axis_steer();
+  float throttle = (input_held(ACT_THROTTLE) ? 1.0f : 0.0f) -
+                   (input_held(ACT_BRAKE) ? 1.0f : 0.0f);
+  float steer = input_axis(AX_STEER);
 
   s_veh.speed += throttle * CAR_ACCEL * dt;
   s_veh.speed -= s_veh.speed * CAR_DRAG * dt;
@@ -189,7 +190,7 @@ static void drive_car(float dt) {
 
   trail_push(s_veh.pos);
 
-  if (input_pressed(ACT_RESET)) {
+  if (input_pressed(ACT_DEV_RESET)) {
     glm_vec3_zero(s_veh.pos);
     s_veh.heading = 0.0f;
     s_veh.speed = 0.0f;
@@ -201,11 +202,9 @@ static void drive_car(float dt) {
 }
 
 void game_tick(float dt) {
-  const InputState *in = input_state();
-
   s_time += dt;
 
-  if (input_pressed(ACT_TOGGLE_CAM)) {
+  if (input_pressed(ACT_DEV_CAM)) {
     s_cam_mode = (s_cam_mode == CAM_CHASE) ? CAM_FLY : CAM_CHASE;
     if (s_cam_mode == CAM_FLY)
       cam_reset(&s_cam);
@@ -213,26 +212,27 @@ void game_tick(float dt) {
       chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
   }
 
-  if (input_pressed(ACT_TOGGLE_DEBUG))
+  if (input_pressed(ACT_DEV_DEBUG))
     s_debug = !s_debug;
 
   if (s_cam_mode == CAM_FLY) {
     /* Free-fly dev camera: look and speed adjustments stay in the sim. */
     if (input_held(ACT_LOOK))
-      cam_rotate(&s_cam, in->mouse_dx, in->mouse_dy);
+      cam_rotate(&s_cam, input_axis(AX_LOOK_X), input_axis(AX_LOOK_Y));
 
     if (input_held(ACT_BOOST))
       s_cam.speed = 40.0f;
-    else if (input_held(ACT_SLOW))
+    else if (input_held(ACT_BRAKE))
       s_cam.speed = 3.0f;
     else
       s_cam.speed = 10.0f;
 
-    if (input_pressed(ACT_RESET))
+    if (input_pressed(ACT_DEV_RESET))
       cam_reset(&s_cam);
 
-    cam_move(&s_cam, (int)input_axis_throttle(), (int)input_axis_steer(), 0,
-             dt);
+    float fly_throttle = (input_held(ACT_THROTTLE) ? 1.0f : 0.0f) -
+                         (input_held(ACT_BRAKE) ? 1.0f : 0.0f);
+    cam_move(&s_cam, (int)fly_throttle, (int)input_axis(AX_STEER), 0, dt);
   } else {
     drive_car(dt);
   }

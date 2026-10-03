@@ -6,7 +6,7 @@
  *
  *   game_init();
  *   game_resize(w, h);                     // on framebuffer resize
- *   per fixed tick: game_tick(TICK);       // after input_begin_frame()/input_poll()
+ *   per fixed tick: game_tick(TICK);       // after backend_input_poll()/input_begin_frame()
  *   per frame:      game_render(frame_dt); // records the frame via the RenderAPI
  *
  * game_render() records primitives through the RenderAPI only. The backend then

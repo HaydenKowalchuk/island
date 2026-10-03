@@ -6,10 +6,10 @@
  * record a frame through the RenderAPI, then presents that frame with GL.
  *
  * Controls:
- *   W/S   throttle / brake       A/D  steer
- *   SHIFT boost                  CTRL  slow       R     reset camera
- *   RMB drag  look                E     context action
- *   ESC       quit
+ *   W/S   throttle / brake       A/D or arrows  steer
+ *   SHIFT boost                  E     interact          F     enter/exit car
+ *   RMB drag  look                C     dev fly cam       F3    debug stats
+ *   ESC       quit                R     dev reset
  */
 
 #include <stdio.h>
@@ -140,6 +140,7 @@ int main(void) {
             frame_dt = MAX_FRAME_DT;
 
         glfwPollEvents();
+        backend_input_poll();
 
         /* ESC goes through the input manager like everything else. */
         if (input_held(ACT_QUIT))
@@ -150,7 +151,6 @@ int main(void) {
         int ticks = 0;
         while (accumulator >= TICK && ticks < MAX_TICKS) {
             input_begin_frame();
-            input_poll();
 
             game_tick(TICK);
 
