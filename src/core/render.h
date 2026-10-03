@@ -21,8 +21,8 @@
 #define FOG_START 40.0f
 #define FOG_END   220.0f
 
-#define R_MAX_VERTS 8192
-#define R_MAX_DRAWS 256
+#define R_MAX_VERTS 16384
+#define R_MAX_DRAWS 512
 
 typedef struct {
     float x, y, z;

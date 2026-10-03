@@ -9,6 +9,7 @@ island_sources = files(
     'core/camera.c',
     'core/game.c',
     'core/input.c',
+    'core/mesh.c',
     'core/render.c',
     'backend/desktop/main.c',
     'backend/desktop/input_glfw.c',
