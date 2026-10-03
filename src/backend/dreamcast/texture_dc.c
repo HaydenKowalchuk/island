@@ -42,9 +42,9 @@ typedef struct {
     int w;
     int h;
     unsigned int fmt;
-} Entry;
+} DcTexture;
 
-static Entry s_tex[MAX_TEXTURES];
+static DcTexture s_tex[MAX_TEXTURES];
 static int s_tex_count = 0;
 
 static const char* asset_root(void) {
