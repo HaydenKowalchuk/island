@@ -4,8 +4,9 @@
  * OpenGL 1.2/1.5 fixed-function game scaffold.
  *
  * Controls:
- *   W/A/S/D   move        Q/E   down/up
- *   RMB drag  look        R     reset camera
+ *   W/S   throttle / brake       A/D  steer
+ *   SHIFT boost                  CTRL  slow       R     reset camera
+ *   RMB drag  look                E     context action
  *   ESC       quit
  */
 
@@ -16,60 +17,38 @@
 #include <GLFW/glfw3.h>
 
 #include "camera.h"
+#include "input.h"
 #include "render.h"
 
 #define WINDOW_W 1280
 #define WINDOW_H 720
 #define WINDOW_TITLE "island"
 
+/* Fixed logic tick. Physics and game rules run at exactly this rate. */
+#define TICK_HZ 60.0f
+#define TICK (1.0f / TICK_HZ)
+
+/* Cap on catch-up ticks per frame; beyond this the backlog is dropped. */
+#define MAX_TICKS 5
+
+/* Longest frame delta we accept, to survive window drags and breakpoints. */
+#define MAX_FRAME_DT 0.25f
+
 static GLFWwindow* g_window = NULL;
 static FlyCam g_cam;
 
-/* ---- Input ---- */
-static bool g_rmb_down = false;
-static double g_last_mouse_x = 0.0;
-static double g_last_mouse_y = 0.0;
+/* Simulation clock, advanced only in whole ticks. */
+static uint64_t g_tick_count = 0;
+static float g_time = 0.0f;
+
+/* Leftover time between ticks, 0..1. Feeds render interpolation. */
+static float g_render_alpha = 0.0f;
 
 /* ---------------------------------------------------------------- */
 /*  GLFW callbacks                                                   */
 /* ---------------------------------------------------------------- */
 static void error_callback(int error, const char* desc) {
     fprintf(stderr, "GLFW error %d: %s\n", error, desc);
-}
-
-static void key_callback(GLFWwindow* win, int key, int scancode, int action, int mods) {
-    (void)scancode;
-    (void)mods;
-    if (action != GLFW_PRESS) return;
-
-    if (key == GLFW_KEY_ESCAPE) {
-        glfwSetWindowShouldClose(win, true);
-    } else if (key == GLFW_KEY_R) {
-        cam_reset(&g_cam);
-    }
-}
-
-static void mouse_button_callback(GLFWwindow* win, int btn, int action, int mods) {
-    (void)mods;
-    if (btn != GLFW_MOUSE_BUTTON_RIGHT) return;
-
-    if (action == GLFW_PRESS) {
-        g_rmb_down = true;
-        glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        glfwGetCursorPos(win, &g_last_mouse_x, &g_last_mouse_y);
-    } else {
-        g_rmb_down = false;
-        glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-    }
-}
-
-static void cursor_callback(GLFWwindow* win, double x, double y) {
-    (void)win;
-    if (!g_rmb_down) return;
-
-    cam_rotate(&g_cam, (float)(x - g_last_mouse_x), (float)(y - g_last_mouse_y));
-    g_last_mouse_x = x;
-    g_last_mouse_y = y;
 }
 
 static void framebuffer_size_callback(GLFWwindow* win, int w, int h) {
@@ -79,26 +58,29 @@ static void framebuffer_size_callback(GLFWwindow* win, int w, int h) {
 }
 
 /* ---------------------------------------------------------------- */
-/*  Per-frame input polling                                          */
+/*  Fixed-tick simulation                                            */
 /* ---------------------------------------------------------------- */
-static void handle_input(float dt) {
-    int fwd = 0, side = 0, up = 0;
+static void step_once(float dt) {
+    const InputState* in = input_state();
 
-    if (glfwGetKey(g_window, GLFW_KEY_W) == GLFW_PRESS) fwd += 1;
-    if (glfwGetKey(g_window, GLFW_KEY_S) == GLFW_PRESS) fwd -= 1;
-    if (glfwGetKey(g_window, GLFW_KEY_D) == GLFW_PRESS) side += 1;
-    if (glfwGetKey(g_window, GLFW_KEY_A) == GLFW_PRESS) side -= 1;
-    if (glfwGetKey(g_window, GLFW_KEY_E) == GLFW_PRESS) up += 1;
-    if (glfwGetKey(g_window, GLFW_KEY_Q) == GLFW_PRESS) up -= 1;
+    /* Look and speed adjustments belong to the sim so they stay in step. */
+    if (input_held(ACT_LOOK))
+        cam_rotate(&g_cam, in->mouse_dx, in->mouse_dy);
 
-    if (glfwGetKey(g_window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+    if (input_held(ACT_BOOST))
         g_cam.speed = 40.0f;
-    else if (glfwGetKey(g_window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
+    else if (input_held(ACT_SLOW))
         g_cam.speed = 3.0f;
     else
         g_cam.speed = 10.0f;
 
-    cam_move(&g_cam, fwd, side, up, dt);
+    if (input_pressed(ACT_RESET))
+        cam_reset(&g_cam);
+
+    cam_move(&g_cam, (int)input_axis_throttle(), (int)input_axis_steer(), 0, dt);
+
+    g_time += dt;
+    g_tick_count++;
 }
 
 /* ---------------------------------------------------------------- */
@@ -168,36 +150,59 @@ int main(void) {
 
     report_gl_info();
 
-    glfwSetKeyCallback(g_window, key_callback);
-    glfwSetCursorPosCallback(g_window, cursor_callback);
-    glfwSetMouseButtonCallback(g_window, mouse_button_callback);
     glfwSetFramebufferSizeCallback(g_window, framebuffer_size_callback);
+    input_init();
 
     cam_init(&g_cam);
     render_init();
 
     double last_time = glfwGetTime();
+    float accumulator = 0.0f;
 
     while (!glfwWindowShouldClose(g_window)) {
         double now = glfwGetTime();
-        float dt = (float)(now - last_time);
+        float frame_dt = (float)(now - last_time);
         last_time = now;
-        if (dt > 0.1f) dt = 0.1f;
 
-        handle_input(dt);
+        if (frame_dt > MAX_FRAME_DT)
+            frame_dt = MAX_FRAME_DT;
 
+        glfwPollEvents();
+
+        accumulator += frame_dt;
+
+        /* ESC goes through the input manager like everything else. */
+        if (input_held(ACT_QUIT))
+            glfwSetWindowShouldClose(g_window, true);
+
+        int ticks = 0;
+        while (accumulator >= TICK && ticks < MAX_TICKS) {
+            input_begin_frame();
+            input_poll();
+
+            step_once(TICK);
+
+            accumulator -= TICK;
+            ticks++;
+        }
+
+        if (ticks == MAX_TICKS)
+            accumulator = 0.0f; /* Drop the backlog rather than spiral. */
+
+        /*
+         * Render with the leftover time as an interpolation alpha, so rendering
+         * still happens on frames where no tick ran.
+         */
+        g_render_alpha = accumulator / TICK;
         int fb_w, fb_h;
         glfwGetFramebufferSize(g_window, &fb_w, &fb_h);
         cam_update(&g_cam, fb_w, fb_h);
 
-        render_begin_frame();
         render_set_projection((const float*)g_cam.proj);
         render_set_modelview((const float*)g_cam.view);
-        render_ground();
-        render_axes(4.0f);
+        render_frame();
 
         glfwSwapBuffers(g_window);
-        glfwPollEvents();
     }
 
     render_shutdown();

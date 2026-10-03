@@ -1,6 +1,9 @@
 src = files(
     'main.c',
     'camera.c',
+    'gfx.c',
+    'input.c',
+    'passes.c',
     'render.c',
 )
 

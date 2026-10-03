@@ -3,22 +3,22 @@
 
 #include <glad/glad.h>
 
+/* Sky colour doubles as the fog colour, so the horizon has no visible seam. */
+#define SKY_COLOR_R 0.45f
+#define SKY_COLOR_G 0.72f
+#define SKY_COLOR_B 0.90f
+
+#define FOG_START 40.0f
+#define FOG_END   220.0f
+
 void render_init(void);
 void render_shutdown(void);
 
-/* Clears the framebuffer using the current clear color. */
-void render_begin_frame(void);
+/* Clears the framebuffer and runs every pass in order. */
+void render_frame(void);
 
-/* Sets the fixed-function projection from a column-major mat4. */
-void render_set_projection(const float* mat4);
-
-/* Sets the fixed-function modelview from a column-major mat4. */
-void render_set_modelview(const float* mat4);
-
-/* Draws the placeholder ground grid centred on the origin. */
-void render_ground(void);
-
-/* Draws the startup axis gizmo in model space. */
-void render_axes(float len);
+/* Matrix setup, called before the passes. */
+void render_set_projection(const float* mat);
+void render_set_modelview(const float* mat);
 
 #endif

@@ -51,12 +51,12 @@ shaders.
 
 | Input | Action |
 | --- | --- |
-| `W` / `S` | throttle / brake-reverse |
+| `W` / `S` | throttle / brake |
 | `A` / `D` | steer |
-| `Q` / `E` | down / up |
-| `Shift` | boost | 
+| `Shift` | boost |
 | `Ctrl` | slow |
-| RMB drag | look |
+| `RMB` drag | look |
+| `E` | context action (pickup / deliver / talk) |
 | `R` | reset camera |
 | `Esc` | quit |
 
