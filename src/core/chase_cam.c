@@ -9,6 +9,14 @@
 #define CHASE_ZNEAR     0.1f
 #define CHASE_ZFAR      1000.0f
 
+/*
+ * Keep the horizontal field of view constant across display aspects so a 4:3
+ * Dreamcast (640x480) sees the same width as a 16:9 desktop/PSP (1280x720,
+ * 480x272). FOV values below are referenced to 16:9; the effective vertical FOV
+ * is derived from the real aspect each frame (desktop stays identical).
+ */
+#define CHASE_REF_ASPECT (16.0f / 9.0f)
+
 /* A frame hiccup must not blow up the spring; clamp the integration step. */
 #define CHASE_MAX_DT    (1.0f / 30.0f)
 
@@ -39,6 +47,13 @@ static float angle_wrap(float a) {
 
 static float clampf(float v, float lo, float hi) {
     return v < lo ? lo : (v > hi ? hi : v);
+}
+
+/* Vertical FOV (radians) that preserves the 16:9 horizontal FOV at `aspect`. */
+static float vfov_for_aspect(float ref_vfov_deg, float aspect) {
+    float half_h = tanf(ref_vfov_deg * (float)(M_PI / 180.0) * 0.5f) *
+                   CHASE_REF_ASPECT;
+    return 2.0f * atanf(half_h / aspect);
 }
 
 static void place_behind(ChaseCam* c, const float car_pos[3], float heading) {
@@ -105,7 +120,9 @@ void chase_cam_update(ChaseCam* c, const float car_pos[3], float heading,
 
     glm_lookat(c->pos, look, (vec3){ 0.0f, 1.0f, 0.0f }, c->view);
 
-    c->fov = CHASE_FOV_BASE + s01 * CHASE_FOV_GAIN;
-    glm_perspective(glm_rad(c->fov), (float)width / (float)height,
-                    CHASE_ZNEAR, CHASE_ZFAR, c->proj);
+    c->fov = CHASE_FOV_BASE + s01 * CHASE_FOV_GAIN; /* reference FOV at 16:9 */
+    float aspect =
+        (height > 0) ? (float)width / (float)height : CHASE_REF_ASPECT;
+    glm_perspective(vfov_for_aspect(c->fov, aspect), aspect, CHASE_ZNEAR,
+                    CHASE_ZFAR, c->proj);
 }

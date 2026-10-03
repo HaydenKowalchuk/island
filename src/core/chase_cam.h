@@ -12,7 +12,7 @@
 typedef struct {
     vec3 pos, vel;     /* spring state */
     float heading_lag; /* eased car heading, radians */
-    float fov;         /* current vertical FOV, degrees */
+    float fov;         /* reference FOV at 16:9 (vertical there), degrees */
     mat4 view;
     mat4 proj;
 } ChaseCam;

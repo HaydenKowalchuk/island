@@ -77,7 +77,33 @@ int main(void) {
         return 1;
     }
 
-    printf("chase-cam: rest_vel=%.4f settle=%.3fs fov %.1f->%.1f z %.1f->%.1f\n",
-           rest_vel, settle_time, slow.fov, fast.fov, slow.pos[2], fast.pos[2]);
+    /*
+     * 4. Aspect handling (island1-t21d): the horizontal FOV must match across
+     *    16:9 and 4:3, and 16:9 must reproduce the reference vertical FOV.
+     *    proj[5] = 1/tan(vfov/2); horizontal = 2*atan(aspect/proj[5]).
+     */
+    ChaseCam wide, tall;
+    chase_cam_init(&wide, car, 0.0f);
+    chase_cam_init(&tall, car, 0.0f);
+    for (int i = 0; i < 600; i++) {
+        chase_cam_update(&wide, car, 0.0f, 100.0f, 640, 360, TICK); /* 16:9 */
+        chase_cam_update(&tall, car, 0.0f, 100.0f, 320, 240, TICK); /* 4:3  */
+    }
+    float hfov_wide = 2.0f * atanf((640.0f / 360.0f) / wide.proj[1][1]);
+    float hfov_tall = 2.0f * atanf((320.0f / 240.0f) / tall.proj[1][1]);
+    float vfov_wide = 2.0f * atanf(1.0f / wide.proj[1][1]);
+    if (fabsf(hfov_wide - hfov_tall) > 0.01f) {
+        printf("FAIL: horizontal fov 16:9=%.3f 4:3=%.3f\n", hfov_wide, hfov_tall);
+        return 1;
+    }
+    if (fabsf(vfov_wide - glm_rad(fast.fov)) > 0.01f) {
+        printf("FAIL: 16:9 vfov=%.3f ref=%.3f\n", vfov_wide, glm_rad(fast.fov));
+        return 1;
+    }
+
+    printf("chase-cam: rest_vel=%.4f settle=%.3fs fov %.1f->%.1f z %.1f->%.1f "
+           "hfov %.3f/%.3f\n",
+           rest_vel, settle_time, slow.fov, fast.fov, slow.pos[2], fast.pos[2],
+           hfov_wide, hfov_tall);
     return 0;
 }
