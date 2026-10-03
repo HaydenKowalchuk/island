@@ -18,7 +18,8 @@ typedef enum {
     ACT_CONTEXT,   /* pickup / deliver / talk */
     ACT_LOOK,
     ACT_RESET,
-    ACT_TOGGLE_CAM, /* chase <-> free-fly (dev) */
+    ACT_TOGGLE_CAM,   /* chase <-> free-fly (dev) */
+    ACT_TOGGLE_DEBUG, /* render stats overlay (dev) */
     ACT_QUIT,
     ACT_COUNT
 } Action;

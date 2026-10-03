@@ -33,6 +33,19 @@ typedef struct {
 typedef enum { R_TRIANGLES, R_LINES, R_QUADS } RPrim;
 typedef enum { R_CULL_NONE, R_CULL_BACK } RCull;
 
+/* Scene pass a draw belongs to, so per-part costs can be counted. */
+typedef enum {
+    R_PASS_OTHER,
+    R_PASS_SKY,
+    R_PASS_OCEAN,
+    R_PASS_TERRAIN,
+    R_PASS_PROPS,
+    R_PASS_VEHICLE,
+    R_PASS_PARTICLES,
+    R_PASS_HUD,
+    R_PASS_COUNT
+} RPass;
+
 /* Defined in mesh.h. Forward-declared so RDraw can reference one. */
 struct Mesh;
 
@@ -60,6 +73,8 @@ typedef struct {
     RCull cull;
     int textured;
     float tint[4];
+
+    RPass pass; /* filled in by r_draw from the current r_pass() */
 } RDraw;
 
 typedef struct {
@@ -79,6 +94,12 @@ typedef struct {
 
     RDraw draws[R_MAX_DRAWS];
     int draw_count;
+
+    /* Submitted-vertex (index) and draw counts, total and per pass. */
+    int stat_verts;
+    int stat_draws;
+    int pass_verts[R_PASS_COUNT];
+    int pass_draws[R_PASS_COUNT];
 } RenderFrame;
 
 /* Recording API. The game calls these each frame. */
@@ -92,6 +113,12 @@ void r_fog(int enabled, const float color[4], float start, float end);
 int  r_vertex(float x, float y, float z,
               float r, float g, float b, float a, float u, float v);
 void r_draw(const RDraw* draw);
+
+/* Sets the pass subsequent draws are attributed to (for the stats counters). */
+void r_pass(RPass pass);
+
+/* Short fixed label for a pass, e.g. "OCEAN". */
+const char* r_pass_name(RPass pass);
 
 /*
  * Draw a reusable mesh (see mesh.h) transformed by `world` (column-major, may

@@ -16,6 +16,24 @@ static RenderFrame s_frame;
 static int s_view_w = 0;
 static int s_view_h = 0;
 
+/* Current pass, set by r_pass() and stamped onto each recorded draw. */
+static RPass s_pass = R_PASS_OTHER;
+
+static const char* const s_pass_names[R_PASS_COUNT] = {
+    "OTHER", "SKY", "OCEAN", "TERRAIN", "PROPS", "VEH", "PART", "HUD"
+};
+
+void r_pass(RPass pass) {
+    if (pass >= 0 && pass < R_PASS_COUNT)
+        s_pass = pass;
+}
+
+const char* r_pass_name(RPass pass) {
+    if (pass < 0 || pass >= R_PASS_COUNT)
+        return "?";
+    return s_pass_names[pass];
+}
+
 void r_viewport(int width, int height) {
     if (width > 0) s_view_w = width;
     if (height > 0) s_view_h = height;
@@ -73,7 +91,17 @@ int r_vertex(float x, float y, float z,
 void r_draw(const RDraw* draw) {
     if (s_frame.draw_count >= R_MAX_DRAWS)
         return;
-    s_frame.draws[s_frame.draw_count++] = *draw;
+
+    RDraw* dst = &s_frame.draws[s_frame.draw_count++];
+    *dst = *draw;
+    dst->pass = s_pass;
+
+    /* For meshes the submitted vertex count is the index count. */
+    int verts = dst->mesh ? dst->mesh->index_count : dst->count;
+    s_frame.stat_verts += verts;
+    s_frame.stat_draws++;
+    s_frame.pass_verts[s_pass] += verts;
+    s_frame.pass_draws[s_pass]++;
 }
 
 void r_mesh(const struct Mesh* mesh, const float world[16], const float tint[4]) {

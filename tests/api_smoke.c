@@ -37,6 +37,18 @@ int main(void) {
     printf("api-smoke: verts=%d draws=%d mesh=%d raw=%d screen=%d\n",
            f->vert_count, f->draw_count, mesh_draws, raw_draws, screen_draws);
 
+    /* Per-pass submitted-vertex/draw counters (island1-eyai). */
+    printf("api-smoke: stats total=%dv/%dd |", f->stat_verts, f->stat_draws);
+    for (int i = 0; i < R_PASS_COUNT; i++) {
+        if (f->pass_draws[i] == 0)
+            continue;
+        printf(" %s=%d/%d", r_pass_name((RPass)i), f->pass_verts[i], f->pass_draws[i]);
+    }
+    printf("\n");
+
+    int ocean_verts = f->pass_verts[R_PASS_OCEAN];
+    int vehicle_verts = f->pass_verts[R_PASS_VEHICLE];
+
     game_shutdown();
 
     /* The scene must produce geometry, at least one mesh draw (the car) and at
@@ -44,6 +56,8 @@ int main(void) {
     if (f->vert_count <= 0 || f->draw_count <= 0)
         return 1;
     if (mesh_draws == 0 || screen_draws == 0)
+        return 1;
+    if (ocean_verts <= 0 || vehicle_verts <= 0)
         return 1;
 
     return 0;
