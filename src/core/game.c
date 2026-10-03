@@ -145,7 +145,7 @@ void game_resize(int width, int height) {
 #define CAR_MAX_SPEED 34.0f   /* ~122 km/h */
 #define CAR_REVERSE   10.0f
 #define CAR_TURN_RATE 1.9f
-#define CAR_BANK_MAX  0.22f   /* radians, ~12.6 deg */
+#define CAR_BANK_MAX  0.61f   /* radians, ~35 deg aggressive lean (island1-9gio) */
 #define CAR_BANK_RATE 4.0f
 
 static void drive_car(float dt) {
