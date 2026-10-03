@@ -59,6 +59,14 @@ api_smoke = executable('api-smoke',
     install: false)
 test('api-smoke', api_smoke)
 
+# GL-free test for the player mode state machine (on-foot/in-vehicle).
+mode_test = executable('mode-test',
+    files('../tests/mode_test.c') + core_sources,
+    include_directories: [core_inc],
+    dependencies: [cglm_dep, math_dep],
+    install: false)
+test('mode', mode_test)
+
 # GL-free test for the platform-agnostic input contract (actions/axes/edges).
 input_test = executable('input-test',
     files('../tests/input_test.c', 'core/input.c'),

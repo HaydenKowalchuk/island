@@ -52,6 +52,30 @@ typedef struct {
 static CarState s_veh;
 
 /*
+ * Player mode (island1-zku4): the player is either driving the hover car or
+ * walking on foot. On foot the player snaps to the island surface and cannot
+ * walk into deep water; F (ACT_VEHICLE) enters/exits next to the car.
+ */
+typedef enum { MODE_DRIVE, MODE_FOOT } PlayerMode;
+
+#define FOOT_SPEED 4.5f
+#define FOOT_TURN 6.0f
+#define FOOT_WADE -0.8f  /* ground below this is too deep to walk */
+#define VEHICLE_REACH 3.5f
+#define VEHICLE_EXIT_OFFSET 2.6f
+
+typedef struct {
+  vec3 pos;
+  float heading;
+  float speed_kmh;
+  float walk_phase;
+} PlayerState;
+
+static PlayerMode s_mode = MODE_DRIVE;
+static PlayerState s_player;
+static Mesh s_player_mesh;
+
+/*
  * Wake trail: the actual recent path of the car in the XZ plane. Recording
  * world-space points (instead of resampling a fake rope every frame) keeps the
  * ribbon still; the y value is rebuilt each frame from the wave field.
@@ -118,6 +142,28 @@ static void build_parcel(void) {
   s_parcel.texture = texture_get("textures/parcel_32.png");
 }
 
+/* Low-poly humanoid (island1-urkr placeholder): a few flat-shaded boxes. */
+static void build_player(void) {
+  const float pants[4] = {0.18f, 0.20f, 0.30f, 1.0f};
+  const float shirt[4] = {0.25f, 0.45f, 0.75f, 1.0f};
+  const float skin[4] = {0.85f, 0.68f, 0.52f, 1.0f};
+  const float hair[4] = {0.25f, 0.18f, 0.12f, 1.0f};
+
+  mesh_make(&s_player_mesh);
+  mesh_add_box(&s_player_mesh, (const float[]){0.0f, 0.42f, 0.0f},
+               (const float[]){0.20f, 0.42f, 0.16f}, pants);
+  mesh_add_box(&s_player_mesh, (const float[]){0.0f, 1.08f, 0.0f},
+               (const float[]){0.30f, 0.30f, 0.18f}, shirt);
+  mesh_add_box(&s_player_mesh, (const float[]){0.0f, 1.58f, 0.0f},
+               (const float[]){0.20f, 0.20f, 0.20f}, skin);
+  mesh_add_box(&s_player_mesh, (const float[]){0.0f, 1.74f, 0.0f},
+               (const float[]){0.22f, 0.08f, 0.22f}, hair);
+  mesh_add_box(&s_player_mesh, (const float[]){-0.44f, 1.05f, 0.0f},
+               (const float[]){0.10f, 0.35f, 0.12f}, shirt);
+  mesh_add_box(&s_player_mesh, (const float[]){0.44f, 1.05f, 0.0f},
+               (const float[]){0.10f, 0.35f, 0.12f}, shirt);
+}
+
 void game_init(void) {
   cam_init(&s_cam);
 
@@ -131,15 +177,23 @@ void game_init(void) {
   chase_cam_set_ground(terrain_height_at);
   s_cam_mode = CAM_CHASE;
 
+  glm_vec3_zero(s_player.pos);
+  s_player.heading = 0.0f;
+  s_player.speed_kmh = 0.0f;
+  s_player.walk_phase = 0.0f;
+  s_mode = MODE_DRIVE;
+
   terrain_init(1337u);
   build_car();
   build_parcel();
+  build_player();
 }
 
 void game_shutdown(void) {
   terrain_shutdown();
   mesh_destroy(&s_car);
   mesh_destroy(&s_parcel);
+  mesh_destroy(&s_player_mesh);
 }
 
 void game_resize(int width, int height) {
@@ -147,6 +201,29 @@ void game_resize(int width, int height) {
     s_view_w = width;
     s_view_h = height;
   }
+}
+
+GameMode game_mode(void) {
+  return (s_mode == MODE_FOOT) ? GAME_MODE_FOOT : GAME_MODE_DRIVE;
+}
+
+const float *game_player_pos(void) { return s_player.pos; }
+
+const float *game_vehicle_pos(void) { return s_veh.pos; }
+
+void game_place_vehicle(float x, float z, float heading) {
+  s_veh.pos[0] = x;
+  s_veh.pos[2] = z;
+  s_veh.heading = heading;
+  s_veh.speed = 0.0f;
+  s_veh.speed_kmh = 0.0f;
+  s_veh.bank = 0.0f;
+
+  float g = terrain_height_at(x, z);
+  s_veh.pos[1] = (g > 0.0f) ? g + 0.25f : 0.0f;
+
+  trail_clear();
+  chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
 }
 
 /* Minimal arcade driving; replaced by island1-9n0n later. */
@@ -201,6 +278,87 @@ static void drive_car(float dt) {
   }
 }
 
+/*
+ * Enter or leave the car (island1-zku4). Getting out is only allowed while the
+ * car is over land; the player is placed on the first dry side of the car.
+ * Getting back in requires standing within reach of the parked car.
+ */
+static void toggle_vehicle(void) {
+  if (s_mode == MODE_DRIVE) {
+    if (terrain_height_at(s_veh.pos[0], s_veh.pos[2]) <= 0.0f)
+      return; /* must be on an island to disembark */
+
+    float right[2] = {cosf(s_veh.heading), -sinf(s_veh.heading)};
+    float fwd[2] = {sinf(s_veh.heading), cosf(s_veh.heading)};
+    float cand[4][2] = {
+        {s_veh.pos[0] + right[0] * VEHICLE_EXIT_OFFSET,
+         s_veh.pos[2] + right[1] * VEHICLE_EXIT_OFFSET},
+        {s_veh.pos[0] - right[0] * VEHICLE_EXIT_OFFSET,
+         s_veh.pos[2] - right[1] * VEHICLE_EXIT_OFFSET},
+        {s_veh.pos[0] - fwd[0] * VEHICLE_EXIT_OFFSET,
+         s_veh.pos[2] - fwd[1] * VEHICLE_EXIT_OFFSET},
+        {s_veh.pos[0], s_veh.pos[2]},
+    };
+
+    for (int i = 0; i < 4; i++) {
+      float g = terrain_height_at(cand[i][0], cand[i][1]);
+      if (g <= FOOT_WADE && i < 3)
+        continue;
+      s_player.pos[0] = cand[i][0];
+      s_player.pos[1] = (g > 0.0f) ? g + 0.05f : 0.0f;
+      s_player.pos[2] = cand[i][1];
+      s_player.heading = s_veh.heading;
+      s_player.speed_kmh = 0.0f;
+      s_player.walk_phase = 0.0f;
+      s_veh.speed = 0.0f;
+      s_veh.speed_kmh = 0.0f;
+      trail_clear();
+      s_mode = MODE_FOOT;
+      chase_cam_init(&s_chase, s_player.pos, s_player.heading);
+      return;
+    }
+  } else {
+    float dx = s_player.pos[0] - s_veh.pos[0];
+    float dz = s_player.pos[2] - s_veh.pos[2];
+    if (dx * dx + dz * dz > VEHICLE_REACH * VEHICLE_REACH)
+      return;
+
+    s_mode = MODE_DRIVE;
+    s_veh.speed = 0.0f;
+    s_veh.speed_kmh = 0.0f;
+    trail_clear();
+    chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
+  }
+}
+
+/*
+ * On-foot walking (island1-7duk, minimal): W/S walk along the facing direction,
+ * A/D turn. The player follows the terrain height and is blocked by deep water
+ * (shallow water can be waded at sea level).
+ */
+static void walk_player(float dt) {
+  float move = (input_held(ACT_THROTTLE) ? 1.0f : 0.0f) -
+               (input_held(ACT_BRAKE) ? 1.0f : 0.0f);
+  float steer = input_axis(AX_STEER);
+
+  s_player.heading -= steer * FOOT_TURN * dt;
+
+  float v = move * FOOT_SPEED;
+  float nx = s_player.pos[0] + sinf(s_player.heading) * v * dt;
+  float nz = s_player.pos[2] + cosf(s_player.heading) * v * dt;
+  float g = terrain_height_at(nx, nz);
+
+  if (g > FOOT_WADE) {
+    s_player.pos[0] = nx;
+    s_player.pos[2] = nz;
+    s_player.pos[1] = (g > 0.0f) ? g + 0.05f : 0.0f;
+    s_player.walk_phase += fabsf(move) * dt * 9.0f;
+  }
+  /* else: deep water ahead, stand still. */
+
+  s_player.speed_kmh = fabsf(v) * 3.6f;
+}
+
 void game_tick(float dt) {
   s_time += dt;
 
@@ -208,12 +366,17 @@ void game_tick(float dt) {
     s_cam_mode = (s_cam_mode == CAM_CHASE) ? CAM_FLY : CAM_CHASE;
     if (s_cam_mode == CAM_FLY)
       cam_reset(&s_cam);
+    else if (s_mode == MODE_FOOT)
+      chase_cam_init(&s_chase, s_player.pos, s_player.heading);
     else
       chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
   }
 
   if (input_pressed(ACT_DEV_DEBUG))
     s_debug = !s_debug;
+
+  if (input_pressed(ACT_VEHICLE))
+    toggle_vehicle();
 
   if (s_cam_mode == CAM_FLY) {
     /* Free-fly dev camera: look and speed adjustments stay in the sim. */
@@ -233,6 +396,8 @@ void game_tick(float dt) {
     float fly_throttle = (input_held(ACT_THROTTLE) ? 1.0f : 0.0f) -
                          (input_held(ACT_BRAKE) ? 1.0f : 0.0f);
     cam_move(&s_cam, (int)fly_throttle, (int)input_axis(AX_STEER), 0, dt);
+  } else if (s_mode == MODE_FOOT) {
+    walk_player(dt);
   } else {
     drive_car(dt);
   }
@@ -463,6 +628,21 @@ static void emit_car(float t) {
   r_mesh(&s_car, (const float *)world, white);
 }
 
+/* The walking player (island1-zku4/urkr): humanoid mesh on the island surface. */
+static void emit_player(float t) {
+  (void)t;
+  r_pass(R_PASS_VEHICLE);
+  const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  const float bob = 0.05f * sinf(s_player.walk_phase);
+
+  mat4 world;
+  glm_mat4_identity(world);
+  glm_translate(world, (vec3){s_player.pos[0], s_player.pos[1] + bob, s_player.pos[2]});
+  glm_rotate(world, s_player.heading, (vec3){0.0f, 1.0f, 0.0f});
+
+  r_mesh(&s_player_mesh, (const float *)world, white);
+}
+
 /* A textured parcel spinning slightly ahead of the car. */
 static void emit_parcel(float t) {
   r_pass(R_PASS_PROPS);
@@ -509,8 +689,12 @@ void game_render(float frame_dt) {
   r_fog(1, fog_color, FOG_START, FOG_END);
 
   if (s_cam_mode == CAM_CHASE) {
-    chase_cam_update(&s_chase, s_veh.pos, s_veh.heading, s_veh.speed_kmh,
-                     s_view_w, s_view_h, frame_dt);
+    if (s_mode == MODE_FOOT)
+      chase_cam_update(&s_chase, s_player.pos, s_player.heading,
+                       s_player.speed_kmh, s_view_w, s_view_h, frame_dt);
+    else
+      chase_cam_update(&s_chase, s_veh.pos, s_veh.heading, s_veh.speed_kmh,
+                       s_view_w, s_view_h, frame_dt);
     r_camera((const float *)s_chase.view, (const float *)s_chase.proj);
   } else {
     cam_update(&s_cam, s_view_w, s_view_h);
@@ -522,16 +706,29 @@ void game_render(float frame_dt) {
   terrain_emit();
   emit_wake(s_time);
   emit_car(s_time);
+  if (s_mode == MODE_FOOT)
+    emit_player(s_time);
   emit_parcel(s_time);
 
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
   char buf[48];
 
+  int on_land = terrain_height_at(s_veh.pos[0], s_veh.pos[2]) > 0.0f;
+  float pdx = s_player.pos[0] - s_veh.pos[0];
+  float pdz = s_player.pos[2] - s_veh.pos[2];
+  int near_car = pdx * pdx + pdz * pdz <= VEHICLE_REACH * VEHICLE_REACH;
+  float speed_kmh = (s_mode == MODE_FOOT) ? s_player.speed_kmh : s_veh.speed_kmh;
+
   r_pass(R_PASS_HUD);
-  snprintf(buf, sizeof(buf), "%d KMH", (int)(s_veh.speed_kmh + 0.5f));
-  r_text_2d(12, 10, 2.0f, s_cam_mode == CAM_CHASE ? "CHASE" : "FLY", white);
+  snprintf(buf, sizeof(buf), "%d KMH", (int)(speed_kmh + 0.5f));
+  r_text_2d(12, 10, 2.0f, s_mode == MODE_FOOT ? "ON FOOT" : "CHASE", white);
   r_text_2d(12, 32, 1.5f, buf, white);
-  r_text_2d(12, 54, 1.0f, "WASD DRIVE  F FLY  F3 STATS", white);
+  if (s_mode == MODE_FOOT)
+    r_text_2d(12, 54, 1.0f, near_car ? "F GET IN" : "WASD WALK  F3 STATS", white);
+  else
+    r_text_2d(12, 54, 1.0f,
+              on_land ? "F GET OUT  F3 STATS" : "DRIVE TO LAND TO DISEMBARK",
+              white);
 
   /* Snapshot after the scene/HUD so the overlay itself is not counted. */
   const RenderFrame *fr = r_frame();

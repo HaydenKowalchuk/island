@@ -19,4 +19,13 @@ void game_resize(int width, int height);
 void game_tick(float dt);
 void game_render(float frame_dt);
 
+/* Player/vehicle mode (island1-zku4); also read by tests and debug tooling. */
+typedef enum { GAME_MODE_DRIVE, GAME_MODE_FOOT } GameMode;
+GameMode game_mode(void);
+const float* game_player_pos(void);
+const float* game_vehicle_pos(void);
+
+/* Teleport the parked car (spawn/reset/tests). Snaps it to the ground. */
+void game_place_vehicle(float x, float z, float heading);
+
 #endif
