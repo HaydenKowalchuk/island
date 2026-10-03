@@ -861,9 +861,13 @@ static void emit_ocean(float t) {
       int v = r_vertex(x0, y00, z0, r, g, b, 1.0f, 0.0f, 0.0f);
       if (first < 0)
         first = v;
-      r_vertex(x1, y10, z0, r, g, b, 1.0f, 0.0f, 0.0f);
-      r_vertex(x1, y11, z1, r, g, b, 1.0f, 0.0f, 0.0f);
+      /* Wound so the geometric normal points up: (x0,z0) (x0,z1) (x1,z1)
+       * (x1,z0). Single-sided (cull back) — the PVR's opaque compare mislikes
+       * two coincident faces at identical depth, and the desktop culls the
+       * hidden face for free. */
       r_vertex(x0, y01, z1, r, g, b, 1.0f, 0.0f, 0.0f);
+      r_vertex(x1, y11, z1, r, g, b, 1.0f, 0.0f, 0.0f);
+      r_vertex(x1, y10, z0, r, g, b, 1.0f, 0.0f, 0.0f);
       count += 4;
     }
   }
@@ -874,7 +878,7 @@ static void emit_ocean(float t) {
   d.count = count;
   d.fog = 1;
   d.depth_write = 1;
-  d.cull = R_CULL_NONE;
+  d.cull = R_CULL_BACK;
   d.tint[0] = d.tint[1] = d.tint[2] = d.tint[3] = 1.0f;
   r_draw(&d);
 }

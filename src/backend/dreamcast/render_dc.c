@@ -232,19 +232,18 @@ static void dc_pack_vert(const ClipFull *v, int fog, const float tint[4],
 }
 
 /*
- * Screen-space draws map the [0,1] unit square straight to pixels. z = 0 puts
- * them at the far plane: the sky (opaque, depth-write off) then sorts behind
- * every opaque polygon, and HUD draws (translucent list) render after all
- * opaque anyway. Caveat: translucent draws sort by depth, so far HUD sorts
- * behind near translucent — fine while they never overlap (island1-qb9x's
- * punch-through list will give HUD a proper last-draw home later).
+ * Screen-space draws map the [0,1] unit square straight to pixels. The z is
+ * per draw: HUD wants the closest depth (1.0) so it sorts on top within the
+ * translucent list; everything else (the sky) sits at the fog end — the
+ * farthest NON-ZERO W-buffer depth. z = 0 is infinity in the ISP's perspective
+ * math and corrupts the poly's interpolated output.
  */
-static void dc_pack_vert_2d(const ClipFull *v, const float tint[4],
+static void dc_pack_vert_2d(const ClipFull *v, float z, const float tint[4],
                             pvr_vertex_t *out, unsigned int flags) {
   out->flags = flags;
   out->x = v->pos.x * (float)s_fb_w;
   out->y = (1.0f - v->pos.y) * (float)s_fb_h;
-  out->z = 0.0f;
+  out->z = z;
 
   out->argb = PVR_PACK_COLOR(v->a * tint[3], v->r * tint[0], v->g * tint[1],
                              v->b * tint[2]);
@@ -260,7 +259,7 @@ static void dc_pack_vert_2d(const ClipFull *v, const float tint[4],
  * LIST — PVR_CMD_VERTEX, PVR_CMD_VERTEX, PVR_CMD_VERTEX_EOL. Returns the
  * number of vertices written (0..6).
  */
-static int dc_emit_tri(const float *m, int screen_space, int fog,
+static int dc_emit_tri(const float *m, int screen_space, int fog, float z2d,
                        const float tint[4], const RVertex *a, const RVertex *b,
                        const RVertex *c, pvr_vertex_t *out) {
   ClipFull poly[3];
@@ -283,9 +282,9 @@ static int dc_emit_tri(const float *m, int screen_space, int fog,
   int written = 0;
   for (int i = 1; i + 1 < n; i++) {
     if (screen_space) {
-      dc_pack_vert_2d(&poly[0], tint, &out[written], PVR_CMD_VERTEX);
-      dc_pack_vert_2d(&poly[i], tint, &out[written + 1], PVR_CMD_VERTEX);
-      dc_pack_vert_2d(&poly[i + 1], tint, &out[written + 2],
+      dc_pack_vert_2d(&poly[0], z2d, tint, &out[written], PVR_CMD_VERTEX);
+      dc_pack_vert_2d(&poly[i], z2d, tint, &out[written + 1], PVR_CMD_VERTEX);
+      dc_pack_vert_2d(&poly[i + 1], z2d, tint, &out[written + 2],
                       PVR_CMD_VERTEX_EOL);
     } else {
       dc_pack_vert(&poly[0], fog, tint, &out[written], PVR_CMD_VERTEX);
@@ -328,8 +327,10 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
   else
     pvr_poly_cxt_col(&cxt, list);
 
+  /* Empirically verified in Flycast: the TA's winding sense matches the GL
+   * winding as seen (no y-flip inversion), so back faces = CW. */
   cxt.gen.culling =
-      (d->cull == R_CULL_BACK) ? PVR_CULLING_CCW : PVR_CULLING_NONE;
+      (d->cull == R_CULL_BACK) ? PVR_CULLING_CW : PVR_CULLING_NONE;
   cxt.depth.comparison = PVR_DEPTHCMP_GREATER;
   cxt.depth.write =
       d->depth_write ? PVR_DEPTHWRITE_ENABLE : PVR_DEPTHWRITE_DISABLE;
@@ -357,6 +358,17 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
   }
 
   int fog = d->fog && frame->fog_enabled && !screen_space;
+
+  /*
+   * Screen-space z, per draw: HUD closest (1.0) so it sorts on top within the
+   * translucent list; the sky sits at the fog end — the farthest non-zero
+   * W-buffer depth (z = 0 is infinity in the ISP's perspective math).
+   */
+  float z2d = 1.0f;
+  if (d->pass != R_PASS_HUD) {
+    z2d = (frame->fog_end > 0.0f) ? s_znear / frame->fog_end : 0.001f;
+  }
+
   const RVertex *verts = frame->verts;
   int written = 0;
 
@@ -365,16 +377,17 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
     for (int i = 0; i + 2 < mesh->index_count; i += 3) {
       if (written + 8 > DC_SCRATCH_VERTS)
         break; /* overflow guard (island1-41ct) */
-      written += dc_emit_tri(
-          m, screen_space, fog, d->tint, &mesh->verts[mesh->indices[i]],
-          &mesh->verts[mesh->indices[i + 1]],
-          &mesh->verts[mesh->indices[i + 2]], &s_scratch[written]);
+      written += dc_emit_tri(m, screen_space, fog, z2d, d->tint,
+                             &mesh->verts[mesh->indices[i]],
+                             &mesh->verts[mesh->indices[i + 1]],
+                             &mesh->verts[mesh->indices[i + 2]],
+                             &s_scratch[written]);
     }
   } else if (d->prim == R_TRIANGLES) {
     for (int i = 0; i + 2 < d->count; i += 3) {
       if (written + 8 > DC_SCRATCH_VERTS)
         break;
-      written += dc_emit_tri(m, screen_space, fog, d->tint,
+      written += dc_emit_tri(m, screen_space, fog, z2d, d->tint,
                              &verts[d->first + i], &verts[d->first + i + 1],
                              &verts[d->first + i + 2], &s_scratch[written]);
     }
@@ -383,10 +396,10 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
       if (written + 12 > DC_SCRATCH_VERTS)
         break;
       const RVertex *q = &verts[d->first + i];
-      written += dc_emit_tri(m, screen_space, fog, d->tint, &q[0], &q[1], &q[2],
-                             &s_scratch[written]);
-      written += dc_emit_tri(m, screen_space, fog, d->tint, &q[0], &q[2], &q[3],
-                             &s_scratch[written]);
+      written += dc_emit_tri(m, screen_space, fog, z2d, d->tint, &q[0], &q[1],
+                             &q[2], &s_scratch[written]);
+      written += dc_emit_tri(m, screen_space, fog, z2d, d->tint, &q[0], &q[2],
+                             &q[3], &s_scratch[written]);
     }
   }
   /* R_LINES: the TA has no line primitive; skipped for now (dev-only
