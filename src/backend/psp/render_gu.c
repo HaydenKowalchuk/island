@@ -18,6 +18,12 @@
  * into the GU vertex formats, and quad/line/triangle draws map 1:1 onto GE
  * primitives. There is no quad primitive on the GE, so R_QUADS is expanded.
  *
+ * All per-frame vertex/index data is allocated with sceGuGetMemory, i.e. it
+ * lives inside the display list buffer. sceGuFinish flushes that buffer to RAM
+ * before the GE runs, which sidesteps the CPU-data-cache coherency problems
+ * (garbled vertices on hardware) that external static arrays hit: the GE reads
+ * memory through a separate, non-coherent path.
+ *
  * Depth uses the reversed convention (far=0, near=65535, GU_GEQUAL) because the
  * GU clears depth to 0 and considers larger values closer.
  */
@@ -25,9 +31,6 @@
 #define SCR_WIDTH 480
 #define SCR_HEIGHT 272
 #define BUF_WIDTH 512
-
-/* Two upstream vertices per scratch slot covers quad expansion (4 -> 6). */
-#define GU_SCRATCH (R_MAX_VERTS * 2)
 
 /* Attribute order must match the GU VTYPE bits: texture, colour, normal, pos. */
 typedef struct {
@@ -42,8 +45,6 @@ typedef struct {
 } GuVtx;
 
 static unsigned int __attribute__((aligned(16))) s_list[262144];
-static GuTexVtx __attribute__((aligned(16))) s_tex_scratch[GU_SCRATCH];
-static GuVtx __attribute__((aligned(16))) s_vtx_scratch[GU_SCRATCH];
 
 static ScePspFMatrix4 s_identity;
 static ScePspFMatrix4 s_proj_unit;
@@ -177,41 +178,58 @@ static void present_recorded(const RenderFrame* f, const RDraw* d, int screen) {
     const RVertex* v = &f->verts[d->first];
     const float* tint = d->tint;
     int count = d->count;
+    if (count <= 0)
+        return;
 
     /* No recorded draw carries a texture handle, so all are untextured. */
     apply_state(f, d, 0, screen);
     sceGuSetMatrix(GU_MODEL, &s_identity);
 
-    int prim = (d->prim == R_LINES) ? GU_LINES : GU_TRIANGLES;
+    if (d->prim == R_LINES) {
+        GuVtx* out = (GuVtx*)sceGuGetMemory((unsigned int)count * sizeof(GuVtx));
+        for (int i = 0; i < count; i++) {
+            out[i].color = shade(&v[i], tint);
+            out[i].x = v[i].x;
+            out[i].y = v[i].y;
+            out[i].z = v[i].z;
+        }
+        sceGuDrawArray(GU_LINES, GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D,
+                       count, NULL, out);
+        return;
+    }
+
+    /* R_QUADS -> 2 triangles each; R_TRIANGLES passes through. */
+    int out_count = (d->prim == R_QUADS) ? (count / 4) * 6 : count;
+    if (out_count <= 0)
+        return;
+
+    GuVtx* out = (GuVtx*)sceGuGetMemory((unsigned int)out_count * sizeof(GuVtx));
     int n = 0;
 
     if (d->prim == R_QUADS) {
+        static const int order[6] = { 0, 1, 2, 0, 2, 3 };
         for (int q = 0; q + 3 < count; q += 4) {
-            static const int order[6] = { 0, 1, 2, 0, 2, 3 };
             for (int k = 0; k < 6; k++) {
                 const RVertex* s = &v[q + order[k]];
-                s_vtx_scratch[n].color = shade(s, tint);
-                s_vtx_scratch[n].x = s->x;
-                s_vtx_scratch[n].y = s->y;
-                s_vtx_scratch[n].z = s->z;
+                out[n].color = shade(s, tint);
+                out[n].x = s->x;
+                out[n].y = s->y;
+                out[n].z = s->z;
                 n++;
             }
         }
     } else {
         for (int i = 0; i < count; i++) {
-            s_vtx_scratch[n].color = shade(&v[i], tint);
-            s_vtx_scratch[n].x = v[i].x;
-            s_vtx_scratch[n].y = v[i].y;
-            s_vtx_scratch[n].z = v[i].z;
+            out[n].color = shade(&v[i], tint);
+            out[n].x = v[i].x;
+            out[n].y = v[i].y;
+            out[n].z = v[i].z;
             n++;
         }
     }
 
-    if (n == 0 || n > GU_SCRATCH)
-        return;
-
-    sceGuDrawArray(prim, GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D,
-                   n, NULL, s_vtx_scratch);
+    sceGuDrawArray(GU_TRIANGLES, GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D,
+                   n, NULL, out);
 }
 
 static void present_mesh(const RenderFrame* f, const RDraw* d) {
@@ -225,36 +243,45 @@ static void present_mesh(const RenderFrame* f, const RDraw* d) {
     memcpy(&s_model, d->world, sizeof(s_model));
     sceGuSetMatrix(GU_MODEL, &s_model);
 
+    /* Indices also come from the display list; copy them fresh each draw. */
+    unsigned short* indices = (unsigned short*)sceGuGetMemory(
+        (unsigned int)m->index_count * sizeof(unsigned short));
+    memcpy(indices, m->indices, (size_t)m->index_count * sizeof(unsigned short));
+
     if (textured) {
         if (m->texture != s_cur_tex) {
             texture_gu_apply(m->texture);
             s_cur_tex = m->texture;
         }
+        GuTexVtx* out =
+            (GuTexVtx*)sceGuGetMemory((unsigned int)m->vert_count * sizeof(GuTexVtx));
         for (int i = 0; i < m->vert_count; i++) {
             const RVertex* s = &m->verts[i];
-            s_tex_scratch[i].u = s->u;
-            s_tex_scratch[i].v = s->v;
-            s_tex_scratch[i].color = shade(s, d->tint);
-            s_tex_scratch[i].x = s->x;
-            s_tex_scratch[i].y = s->y;
-            s_tex_scratch[i].z = s->z;
+            out[i].u = s->u;
+            out[i].v = s->v;
+            out[i].color = shade(s, d->tint);
+            out[i].x = s->x;
+            out[i].y = s->y;
+            out[i].z = s->z;
         }
         sceGuDrawArray(GU_TRIANGLES,
                        GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF |
                            GU_INDEX_16BIT | GU_TRANSFORM_3D,
-                       m->index_count, m->indices, s_tex_scratch);
+                       m->index_count, indices, out);
     } else {
+        GuVtx* out =
+            (GuVtx*)sceGuGetMemory((unsigned int)m->vert_count * sizeof(GuVtx));
         for (int i = 0; i < m->vert_count; i++) {
             const RVertex* s = &m->verts[i];
-            s_vtx_scratch[i].color = shade(s, d->tint);
-            s_vtx_scratch[i].x = s->x;
-            s_vtx_scratch[i].y = s->y;
-            s_vtx_scratch[i].z = s->z;
+            out[i].color = shade(s, d->tint);
+            out[i].x = s->x;
+            out[i].y = s->y;
+            out[i].z = s->z;
         }
         sceGuDrawArray(GU_TRIANGLES,
                        GU_COLOR_8888 | GU_VERTEX_32BITF | GU_INDEX_16BIT |
                            GU_TRANSFORM_3D,
-                       m->index_count, m->indices, s_vtx_scratch);
+                       m->index_count, indices, out);
     }
 }
 
@@ -346,12 +373,8 @@ void render_present(int fb_w, int fb_h) {
         }
     }
 
-    /* The GE reads vertices/indices from RAM through its own path, so CPU
-     * writes must be written back to memory before the list runs. The static
-     * scratch buffers and malloc'd mesh data are outside the display list that
-     * sceGuFinish flushes, hence the explicit writeback here. */
-    sceKernelDcacheWritebackAll();
-
+    /* Terminates the list and flushes it (including the sceGuGetMemory vertex
+     * and index data) so the GE reads coherent RAM. */
     sceGuFinish();
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
 

@@ -31,9 +31,12 @@ Decisions taken while implementing, in priority order:
 - Depth uses the reversed convention: `sceGuDepthRange(65535, 0)`,
   `sceGuClearDepth(0)`, `GU_GEQUAL` — larger value = nearer, which is what GU
   clears to.
-- `R_QUADS` and `R_LINES` are copied/expanded into scratch vertex buffers in the
-  GE's native packed formats (`GU_TEXTURE_32BITF | GU_COLOR_8888 |
-  GU_VERTEX_32BITF`, plus `GU_INDEX_16BIT` for meshes).
+- `R_QUADS` and `R_LINES` are copied/expanded into vertex buffers in the GE's
+  native packed formats (`GU_TEXTURE_32BITF | GU_COLOR_8888 |
+  GU_VERTEX_32BITF`, plus `GU_INDEX_16BIT` for meshes). The buffers (and mesh
+  indices) come from `sceGuGetMemory`, i.e. they live inside the display list.
+- Vertex member order follows the GE spec: texture, colour, normal, position
+  (our structs are `{u,v,color,x,y,z}` and `{color,x,y,z}`, all 32-bit).
 - Lighting stays baked (vertex colours); `GU_LIGHTING` is never enabled.
 - Fog **is** hardware: `sceGuFog(fog_start, fog_end, sky)` + `GU_FOG`. This
   supersedes the "CPU vertex-colour fog" note in island1-gi02's description.
@@ -43,6 +46,22 @@ Decisions taken while implementing, in priority order:
 Verified in PPSSPP: the frame matches the desktop build (passes, winding, depth,
 fog, textures and screen-space HUD all correct), so the matrix/winding/depth
 sign conventions above are confirmed as-is.
+
+## Hardware notes (real PSP)
+
+- **Cache coherency.** The GE reads RAM through a path that is not coherent with
+  the CPU data cache, so the GE can see stale bytes for anything the CPU just
+  wrote. Static scratch vertex arrays caused garbled geometry on hardware (but
+  not in PPSSPP, which shares memory). Fix: allocate all per-frame vertices and
+  mesh indices with `sceGuGetMemory`, so they sit inside the display list that
+  `sceGuFinish` flushes. (The pspsdk `vertex` sample does the same, or calls
+  `sceKernelDcacheWritebackAll` when it rebuilds CPU-side buffers.) Texture
+  uploads still need their own `sceKernelDcacheWritebackRange`.
+- The 1 MB display list (`s_list[262144]`, 16-byte aligned) must also hold the
+  transient vertex/index data now; the frame caps keep the worst case well
+  under it.
+- Analog nub: a 0.30 deadzone with the remaining travel remapped to 0..1 is
+  needed; the raw nub is far too twitchy otherwise (`input_psp.c`).
 
 ## Hardware overview
 

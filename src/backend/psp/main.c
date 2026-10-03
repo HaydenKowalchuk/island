@@ -36,67 +36,67 @@
 #define MAX_FRAME_DT 0.25f
 
 static float now_seconds(void) {
-    return (float)((double)sceKernelGetSystemTimeWide() / 1000000.0);
+  return (float)((double)sceKernelGetSystemTimeWide() / 1000000.0);
 }
 
-int main(int argc, char** argv) {
-    (void)argc;
-    (void)argv;
+int main(int argc, char **argv) {
+  (void)argc;
+  (void)argv;
 
-    psp_setup_callbacks();
-    setbuf(stdout, NULL);
+  psp_setup_callbacks();
+  setbuf(stdout, NULL);
 
-    input_init();
-    backend_input_init();
+  input_init();
+  backend_input_init();
 
-    game_resize(SCR_W, SCR_H);
+  game_resize(SCR_W, SCR_H);
 
-    /* render_init installs the texture loader, so content built in game_init
-     * can request textures and have them uploaded immediately. */
-    render_init();
-    game_init();
+  /* render_init installs the texture loader, so content built in game_init
+   * can request textures and have them uploaded immediately. */
+  render_init();
+  game_init();
 
-    /* HUD/text rendering corrupts on real hardware; off until it is sorted. */
-    game_set_hud(0);
+  /* HUD/text rendering corrupts on real hardware; off until it is sorted. */
+  // game_set_hud(0);
 
-    float last = now_seconds();
-    float accumulator = 0.0f;
+  float last = now_seconds();
+  float accumulator = 0.0f;
 
-    while (!psp_done) {
-        float now = now_seconds();
-        float frame_dt = now - last;
-        last = now;
+  while (!psp_done) {
+    float now = now_seconds();
+    float frame_dt = now - last;
+    last = now;
 
-        if (frame_dt < 0.0f)
-            frame_dt = 0.0f;
-        if (frame_dt > MAX_FRAME_DT)
-            frame_dt = MAX_FRAME_DT;
+    if (frame_dt < 0.0f)
+      frame_dt = 0.0f;
+    if (frame_dt > MAX_FRAME_DT)
+      frame_dt = MAX_FRAME_DT;
 
-        backend_input_poll();
-        if (input_held(ACT_QUIT))
-            break;
+    backend_input_poll();
+    if (input_held(ACT_QUIT))
+      break;
 
-        accumulator += frame_dt;
+    accumulator += frame_dt;
 
-        int ticks = 0;
-        while (accumulator >= TICK && ticks < MAX_TICKS) {
-            input_begin_frame();
+    int ticks = 0;
+    while (accumulator >= TICK && ticks < MAX_TICKS) {
+      input_begin_frame();
 
-            game_tick(TICK);
+      game_tick(TICK);
 
-            accumulator -= TICK;
-            ticks++;
-        }
-
-        if (ticks == MAX_TICKS)
-            accumulator = 0.0f; /* Drop the backlog rather than spiral. */
-
-        game_render(frame_dt);
-        render_present(SCR_W, SCR_H);
+      accumulator -= TICK;
+      ticks++;
     }
 
-    game_shutdown();
-    render_shutdown();
-    sceKernelExitGame();
-    return 0;
+    if (ticks == MAX_TICKS)
+      accumulator = 0.0f; /* Drop the backlog rather than spiral. */
+
+    game_render(frame_dt);
+    render_present(SCR_W, SCR_H);
+  }
+
+  game_shutdown();
+  render_shutdown();
+  sceKernelExitGame();
+  return 0;
 }

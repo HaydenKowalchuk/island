@@ -1,3 +1,5 @@
+#include <math.h>
+
 #include <pspctrl.h>
 
 #include "input.h" /* core input contract */
@@ -18,9 +20,10 @@
 
 #define NUB_CENTER 128
 #define NUB_RANGE 127
-/* ~0.16 of full deflection; below this the nub reads as centred. */
-#define STEER_DEADZONE 0.16f
-#define FWD_DEADZONE 0.20f
+/* Large deadzone (the nub is very sensitive); the remaining travel is remapped
+ * to 0..1 so full deflection still reaches a full-value axis. */
+#define STEER_DEADZONE 0.30f
+#define FWD_DEADZONE 0.30f
 
 /* Digital button edges are emitted only on change, like GLFW's key callback. */
 static unsigned int s_prev_buttons;
@@ -34,13 +37,15 @@ static void key_event(unsigned int buttons, unsigned int mask, Action action) {
 
 static float nub_axis(unsigned char raw, float deadzone) {
     float v = ((float)raw - (float)NUB_CENTER) / (float)NUB_RANGE;
-    if (v > -deadzone && v < deadzone)
-        return 0.0f;
     if (v < -1.0f)
         v = -1.0f;
     if (v > 1.0f)
         v = 1.0f;
-    return v;
+    float a = fabsf(v);
+    if (a < deadzone)
+        return 0.0f;
+    float scaled = (a - deadzone) / (1.0f - deadzone);
+    return (v < 0.0f) ? -scaled : scaled;
 }
 
 void backend_input_init(void) {
