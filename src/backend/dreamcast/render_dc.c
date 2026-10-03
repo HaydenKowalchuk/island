@@ -60,7 +60,27 @@ static float s_znear = 0.1f;
 void render_init(void) {
   /* pvr_init requires a suitable 3D video mode to be active first. */
   vid_set_mode(DM_640x480, PM_RGB565);
-  pvr_init_defaults();
+
+  /*
+   * Enable every list we submit: opaque, translucent and punch-through.
+   * pvr_init_defaults() leaves the punch-through bins at zero (disabled), and
+   * pvr_list_begin() on a disabled list stalls the PVR — the freeze on boot.
+   * Bins and vertex buffers come out of the texture memory pool, so only
+   * allocate what is needed. Translucent autosort stays on (the PVR sorts
+   * translucent draws by depth, so no painter's sorting from us).
+   */
+  static const pvr_init_params_t pvr_params = {
+      .opb_sizes =
+          {
+              PVR_BINSIZE_16, PVR_BINSIZE_0, PVR_BINSIZE_16, PVR_BINSIZE_0,
+              PVR_BINSIZE_16,
+          },
+      .vertex_buf_size = 512 * 1024,
+      .autosort_disabled = 0,
+      .opb_overflow_count = 3,
+      .vbuf_doublebuf_disabled = 0,
+  };
+  pvr_init(&pvr_params);
 
   /* Installs the texture loader. main_dc calls render_init before
    * game_init (mirroring the desktop backend), so content can request
@@ -415,8 +435,11 @@ void render_present(int fb_w, int fb_h) {
 
   pvr_set_bg_color(frame->clear[0], frame->clear[1], frame->clear[2]);
 
-  /* Wait for the previous frame's render before starting a new scene. */
-  pvr_wait_ready();
+  /*
+   * No explicit wait before the scene: the KOS examples loop straight into
+   * pvr_scene_begin() (it waits for the previous frame internally), and
+   * pvr_wait_ready() before any frame has rendered can stall.
+   */
   pvr_scene_begin();
   dc_submit_list(PVR_LIST_OP_POLY, frame);
   dc_submit_list(PVR_LIST_TR_POLY, frame);
