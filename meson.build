@@ -36,6 +36,7 @@ elif opt_platform == 'dreamcast'
   # SH-4 has no double-precision FPU: keep all math single-precision and
   # help branchless codegen (known-good KOS toolchain flags).
   add_project_arguments('-fsingle-precision-constant', '-mpretend-cmove', language: 'c')
+elif opt_platform == 'psp'
 else
   error('Unsupported platform: ' + opt_platform + ' (desktop or dreamcast)')
 endif
