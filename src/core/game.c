@@ -42,9 +42,45 @@ typedef struct {
     float heading; /* radians; forward = (sin(h), 0, cos(h)) */
     float speed;   /* units/s (signed) */
     float speed_kmh;
+    float bank;    /* radians; leans into the turn */
 } CarState;
 
 static CarState s_veh;
+
+/*
+ * Wake trail: the actual recent path of the car in the XZ plane. Recording
+ * world-space points (instead of resampling a fake rope every frame) keeps the
+ * ribbon still; the y value is rebuilt each frame from the wave field.
+ */
+#define TRAIL_MAX  64
+#define TRAIL_STEP 1.1f
+#define WAKE_LIFT  0.14f
+
+static float s_trail[TRAIL_MAX * 2];
+static int s_trail_count = 0;
+
+static void trail_clear(void) {
+    s_trail_count = 0;
+}
+
+static void trail_push(const float* pos) {
+    if (s_trail_count > 0) {
+        float dx = pos[0] - s_trail[0];
+        float dz = pos[2] - s_trail[1];
+        if (dx * dx + dz * dz < TRAIL_STEP * TRAIL_STEP)
+            return;
+    }
+
+    int last = (s_trail_count < TRAIL_MAX) ? s_trail_count : TRAIL_MAX - 1;
+    for (int i = last; i > 0; i--) {
+        s_trail[i * 2 + 0] = s_trail[(i - 1) * 2 + 0];
+        s_trail[i * 2 + 1] = s_trail[(i - 1) * 2 + 1];
+    }
+    s_trail[0] = pos[0];
+    s_trail[1] = pos[2];
+    if (s_trail_count < TRAIL_MAX)
+        s_trail_count++;
+}
 
 typedef enum { CAM_CHASE, CAM_FLY } CamMode;
 static CamMode s_cam_mode = CAM_CHASE;
@@ -82,6 +118,8 @@ void game_init(void) {
     s_veh.heading = 0.0f;
     s_veh.speed = 0.0f;
     s_veh.speed_kmh = 0.0f;
+    s_veh.bank = 0.0f;
+    trail_clear();
     chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
     s_cam_mode = CAM_CHASE;
 
@@ -102,11 +140,13 @@ void game_resize(int width, int height) {
 }
 
 /* Minimal arcade driving; replaced by island1-9n0n later. */
-#define CAR_ACCEL     9.0f
-#define CAR_DRAG      0.9f
-#define CAR_MAX_SPEED 30.0f
-#define CAR_REVERSE   8.0f
+#define CAR_ACCEL     24.0f   /* must exceed DRAG * MAX_SPEED to reach top end */
+#define CAR_DRAG      0.55f
+#define CAR_MAX_SPEED 34.0f   /* ~122 km/h */
+#define CAR_REVERSE   10.0f
 #define CAR_TURN_RATE 1.9f
+#define CAR_BANK_MAX  0.22f   /* radians, ~12.6 deg */
+#define CAR_BANK_RATE 4.0f
 
 static void drive_car(float dt) {
     float throttle = input_axis_throttle();
@@ -126,11 +166,19 @@ static void drive_car(float dt) {
     s_veh.pos[2] += cosf(s_veh.heading) * s_veh.speed * dt;
     s_veh.speed_kmh = fabsf(s_veh.speed) * 3.6f;
 
+    /* Ease the bank so the car leans into the turn instead of snapping. */
+    float bank_target = steer * CAR_BANK_MAX * speed01;
+    s_veh.bank += (bank_target - s_veh.bank) * (1.0f - expf(-CAR_BANK_RATE * dt));
+
+    trail_push(s_veh.pos);
+
     if (input_pressed(ACT_RESET)) {
         glm_vec3_zero(s_veh.pos);
         s_veh.heading = 0.0f;
         s_veh.speed = 0.0f;
         s_veh.speed_kmh = 0.0f;
+        s_veh.bank = 0.0f;
+        trail_clear();
         chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
     }
 }
@@ -264,15 +312,13 @@ static void emit_ocean(float t) {
  */
 static void emit_car(float t) {
     const float bob = 0.05f * sinf(t * 1.6f);
-    const float speed01 = fabsf(s_veh.speed) / CAR_MAX_SPEED;
-    const float bank = input_axis_steer() * 0.08f * speed01;
     const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
     mat4 world;
     glm_mat4_identity(world);
     glm_translate(world, (vec3){ s_veh.pos[0], s_veh.pos[1] + bob, s_veh.pos[2] });
     glm_rotate(world, s_veh.heading, (vec3){ 0.0f, 1.0f, 0.0f });
-    glm_rotate(world, bank, (vec3){ 0.0f, 0.0f, 1.0f });
+    glm_rotate(world, s_veh.bank, (vec3){ 0.0f, 0.0f, 1.0f });
 
     r_mesh(&s_car, (const float*)world, white);
 }
@@ -294,29 +340,22 @@ static void emit_parcel(float t) {
     r_mesh(&s_parcel, (const float*)world, white);
 }
 
-/* Foam wake trailing the car, laid flat on the water surface. */
-#define WAKE_POINTS 14
-
+/* Foam wake following the car's recorded path, floating just above the waves. */
 static void emit_wake(float t) {
-    float pts[WAKE_POINTS * 3];
-    float fx = sinf(s_veh.heading);
-    float fz = cosf(s_veh.heading);
-    float rx = fz;  /* right vector: forward rotated about Y */
-    float rz = -fx;
+    if (s_trail_count < 2)
+        return;
 
-    for (int i = 0; i < WAKE_POINTS; i++) {
-        float s = (float)i;
-        float back = 1.6f + s * 1.6f;
-        float sway = 0.9f * sinf(s * 0.5f + t * 1.5f) * (s / (float)(WAKE_POINTS - 1));
-        float x = s_veh.pos[0] - fx * back + rx * sway;
-        float z = s_veh.pos[2] - fz * back + rz * sway;
+    float pts[TRAIL_MAX * 3];
+    for (int i = 0; i < s_trail_count; i++) {
+        float x = s_trail[i * 2 + 0];
+        float z = s_trail[i * 2 + 1];
         pts[i * 3 + 0] = x;
-        pts[i * 3 + 1] = wave_height(x, z, t) + 0.03f;
+        pts[i * 3 + 1] = wave_height(x, z, t) + WAKE_LIFT;
         pts[i * 3 + 2] = z;
     }
 
     const float foam[4] = { 0.90f, 0.97f, 1.0f, 0.55f };
-    r_ribbon(pts, WAKE_POINTS, 1.6f, foam);
+    r_ribbon(pts, s_trail_count, 1.6f, foam);
 }
 
 void game_render(float frame_dt) {
