@@ -63,6 +63,9 @@ typedef struct {
 } RDraw;
 
 typedef struct {
+    int width;  /* framebuffer pixels; used to place 2D text */
+    int height;
+
     float clear[4];
     float view[16]; /* column-major */
     float proj[16]; /* column-major */
@@ -81,6 +84,9 @@ typedef struct {
 /* Recording API. The game calls these each frame. */
 void r_frame_begin(void);
 void r_clear(float r, float g, float b, float a);
+
+/* Tells the recorder the framebuffer size, so pixel-based 2D text can place. */
+void r_viewport(int width, int height);
 void r_camera(const float* view, const float* proj);
 void r_fog(int enabled, const float color[4], float start, float end);
 int  r_vertex(float x, float y, float z,
@@ -106,6 +112,21 @@ void r_billboard(const float pos[3], float w, float h, const float color[4]);
  * bottom-left. Alpha-blended; `color[3]` controls opacity. HUD primitive.
  */
 void r_rect_2d(float x, float y, float w, float h, const float color[4]);
+
+/*
+ * Flat ribbon through `n` world-space points (3 floats each), `width` across.
+ * The strip is laid on the horizontal plane (its width runs perpendicular to
+ * the path in XZ), so it reads as a wake or a road. Alpha-blended, fogged, and
+ * batched into a single draw. Good for the car's wake and spray trails.
+ */
+void r_ribbon(const float* pts, int n, float width, const float color[4]);
+
+/*
+ * Text on the HUD. `x`/`y` are in pixels from the top-left, `scale` multiplies
+ * the built-in 8x8 glyphs. Emits one batched, alpha-blended screen-space draw,
+ * so a whole string costs a single draw. Uppercase renders best.
+ */
+void r_text_2d(int x, int y, float scale, const char* s, const float color[4]);
 
 /* The frame recorded since r_frame_begin(). Read by the backend. */
 const RenderFrame* r_frame(void);

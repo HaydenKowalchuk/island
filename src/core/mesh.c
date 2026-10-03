@@ -107,12 +107,17 @@ void mesh_add_quad(Mesh* m, const float a[3], const float b[3], const float c[3]
         return;
     m->indices = idx;
 
+    /* Quad UVs run (0,0)->(1,0)->(1,1)->(0,1); textured meshes see one tile per
+     * face, untextured ones ignore UVs entirely. */
+    static const float QUAD_UV[4][2] = { { 0.0f, 0.0f }, { 1.0f, 0.0f },
+                                         { 1.0f, 1.0f }, { 0.0f, 1.0f } };
+
     unsigned short base = (unsigned short)m->vert_count;
     for (int i = 0; i < 4; i++) {
         RVertex* v = &m->verts[m->vert_count++];
         v->x = pts[i][0]; v->y = pts[i][1]; v->z = pts[i][2];
         v->r = color[0]; v->g = color[1]; v->b = color[2]; v->a = color[3];
-        v->u = 0.0f; v->v = 0.0f;
+        v->u = QUAD_UV[i][0]; v->v = QUAD_UV[i][1];
     }
 
     m->indices[m->index_count++] = base;

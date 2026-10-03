@@ -8,6 +8,7 @@
 #include "input.h"
 #include "mesh.h"
 #include "render.h"
+#include "texture.h"
 
 /*
  * Core game state and rules. This file must stay platform-agnostic: it may only
@@ -23,6 +24,9 @@ static float s_time = 0.0f;
 
 /* The hover car, built once and drawn with a per-frame transform. */
 static Mesh s_car;
+
+/* A textured parcel, bobbing ahead of the car to exercise the texture path. */
+static Mesh s_parcel;
 
 static void build_car(void) {
     const float hull[4]  = { 0.42f, 0.06f, 0.07f, 1.0f };
@@ -40,13 +44,25 @@ static void build_car(void) {
                  (const float[]){ 0.55f, 0.12f, 0.38f }, body);
 }
 
+/* White cube textured with the parcel tile, so the texture path is visible. */
+static void build_parcel(void) {
+    const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+    mesh_make(&s_parcel);
+    mesh_add_box(&s_parcel, (const float[]){ 0.0f, 0.0f, 0.0f },
+                 (const float[]){ 0.35f, 0.35f, 0.35f }, white);
+    s_parcel.texture = texture_get("textures/parcel_32.png");
+}
+
 void game_init(void) {
     cam_init(&s_cam);
     build_car();
+    build_parcel();
 }
 
 void game_shutdown(void) {
     mesh_destroy(&s_car);
+    mesh_destroy(&s_parcel);
 }
 
 void game_resize(int width, int height) {
@@ -184,10 +200,42 @@ static void emit_car(float t) {
     r_mesh(&s_car, (const float*)world, white);
 }
 
+/* A textured parcel spinning slightly ahead of the car. */
+static void emit_parcel(float t) {
+    const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+    mat4 world;
+    glm_mat4_identity(world);
+    glm_translate(world, (vec3){ 3.0f, 1.5f + 0.25f * sinf(t * 2.0f), 1.0f });
+    glm_rotate(world, t * 0.8f, (vec3){ 0.0f, 1.0f, 0.0f });
+
+    r_mesh(&s_parcel, (const float*)world, white);
+}
+
+/* Foam wake trailing the car, laid flat on the water surface. */
+#define WAKE_POINTS 14
+
+static void emit_wake(float t) {
+    float pts[WAKE_POINTS * 3];
+
+    for (int i = 0; i < WAKE_POINTS; i++) {
+        float s = (float)i;
+        float z = -1.6f - s * 1.5f;
+        float x = 0.7f * sinf(z * 0.45f + t * 1.5f) * (s / (float)(WAKE_POINTS - 1));
+        pts[i * 3 + 0] = x;
+        pts[i * 3 + 1] = wave_height(x, z, t) + 0.03f;
+        pts[i * 3 + 2] = z;
+    }
+
+    const float foam[4] = { 0.90f, 0.97f, 1.0f, 0.55f };
+    r_ribbon(pts, WAKE_POINTS, 1.6f, foam);
+}
+
 void game_render(float alpha) {
     (void)alpha; /* interpolated rendering arrives with island1-fnss. */
 
     r_frame_begin();
+    r_viewport(s_view_w, s_view_h);
 
     const float fog_color[4] = { SKY_COLOR_R, SKY_COLOR_G, SKY_COLOR_B, 1.0f };
     r_fog(1, fog_color, FOG_START, FOG_END);
@@ -197,5 +245,10 @@ void game_render(float alpha) {
 
     emit_sky();
     emit_ocean(s_time);
+    emit_wake(s_time);
     emit_car(s_time);
+    emit_parcel(s_time);
+
+    const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    r_text_2d(12, 10, 2.0f, "ISLAND", white);
 }

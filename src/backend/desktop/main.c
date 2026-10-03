@@ -123,8 +123,10 @@ int main(void) {
     glViewport(0, 0, fb_w, fb_h);
     game_resize(fb_w, fb_h);
 
-    game_init();
+    /* render_init installs the texture loader, so content built in game_init
+     * can request textures and have them uploaded immediately. */
     render_init();
+    game_init();
 
     double last_time = glfwGetTime();
     float accumulator = 0.0f;

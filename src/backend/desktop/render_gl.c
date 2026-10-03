@@ -1,21 +1,57 @@
 #include "render_gl.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include <glad/glad.h>
 
 #include "gfx_gl.h"
-#include "mesh.h"   /* core Mesh type */
-#include "render.h" /* core RenderAPI: r_frame(), RenderFrame, RDraw, RVertex */
+#include "mesh.h"      /* core Mesh type */
+#include "render.h"    /* core RenderAPI: r_frame(), RenderFrame, RDraw, RVertex */
+#include "texture_gl.h"
+
+/*
+ * Fixed-function client colour arrays cannot be multiplied by a per-draw tint,
+ * so when a tint is not white we scale a scratch copy of the mesh colours. The
+ * buffer is reused across draws and grown on demand.
+ */
+static RVertex* s_tint_verts = NULL;
+static int s_tint_cap = 0;
 
 void render_init(void) {
     gfx_init();
+    texture_gl_init();
     glClearColor(SKY_COLOR_R, SKY_COLOR_G, SKY_COLOR_B, 1.0f);
     glClearDepth(1.0);
 }
 
 void render_shutdown(void) {
-    /* No GL objects to release yet; textures and meshes will clean up here. */
+    texture_gl_shutdown();
+    free(s_tint_verts);
+    s_tint_verts = NULL;
+    s_tint_cap = 0;
+}
+
+static const RVertex* mesh_verts_with_tint(const Mesh* m, const float tint[4]) {
+    if (tint[0] == 1.0f && tint[1] == 1.0f && tint[2] == 1.0f && tint[3] == 1.0f)
+        return m->verts;
+
+    if (m->vert_count > s_tint_cap) {
+        RVertex* grown = realloc(s_tint_verts, (size_t)m->vert_count * sizeof(RVertex));
+        if (!grown)
+            return m->verts;
+        s_tint_verts = grown;
+        s_tint_cap = m->vert_count;
+    }
+
+    for (int i = 0; i < m->vert_count; i++) {
+        s_tint_verts[i] = m->verts[i];
+        s_tint_verts[i].r *= tint[0];
+        s_tint_verts[i].g *= tint[1];
+        s_tint_verts[i].b *= tint[2];
+        s_tint_verts[i].a *= tint[3];
+    }
+    return s_tint_verts;
 }
 
 static void set_projection(const float* mat) {
@@ -66,8 +102,7 @@ void render_present(int fb_w, int fb_h) {
     for (int i = 0; i < frame->draw_count; i++) {
         const RDraw* d = &frame->draws[i];
 
-        /* Reusable mesh: client-state arrays + transform. Tint is not applied
-         * here yet (bake tints into the mesh or add per-draw colour ops later). */
+        /* Reusable mesh: client-state arrays + transform. */
         if (d->mesh) {
             const Mesh* m = d->mesh;
 
@@ -83,12 +118,14 @@ void render_present(int fb_w, int fb_h) {
             glPushMatrix();
             glMultMatrixf(d->world);
 
+            const RVertex* verts = mesh_verts_with_tint(m, d->tint);
+            const unsigned char* base = (const unsigned char*)verts;
+
             glEnableClientState(GL_VERTEX_ARRAY);
             glEnableClientState(GL_COLOR_ARRAY);
             if (gs.texture)
                 glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
-            const unsigned char* base = (const unsigned char*)m->verts;
             glVertexPointer(3, GL_FLOAT, sizeof(RVertex), base);
             glColorPointer(4, GL_FLOAT, sizeof(RVertex), base + 3 * sizeof(float));
             glTexCoordPointer(2, GL_FLOAT, sizeof(RVertex), base + 7 * sizeof(float));

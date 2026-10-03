@@ -11,6 +11,7 @@ core_sources = files(
     'core/input.c',
     'core/mesh.c',
     'core/render.c',
+    'core/texture.c',
 )
 
 backend_sources = files(
@@ -18,6 +19,7 @@ backend_sources = files(
     'backend/desktop/input_glfw.c',
     'backend/desktop/render_gl.c',
     'backend/desktop/gfx_gl.c',
+    'backend/desktop/texture_gl.c',
 )
 
 island_sources = core_sources + backend_sources
