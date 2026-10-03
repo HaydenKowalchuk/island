@@ -90,7 +90,8 @@ void cam_update(FlyCam* cam, int width, int height) {
     cam_forward(cam, target);
     glm_vec3_add(cam->pos, target, target);
 
-    glm_look(cam->pos, target, (vec3){ 0.0f, 1.0f, 0.0f }, cam->view);
+    /* glm_look() treats its second argument as a direction; use lookat. */
+    glm_lookat(cam->pos, target, (vec3){ 0.0f, 1.0f, 0.0f }, cam->view);
 
     /* cglm's glm_perspective takes the vertical FOV in radians. */
     glm_perspective(glm_rad(cam->fov), (float)width / (float)height, cam->znear, cam->zfar, cam->proj);

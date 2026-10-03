@@ -8,6 +8,7 @@ static GfxState s_current;
 static GfxState s_stack[GFX_STACK_MAX];
 static int s_stack_depth = 0;
 static GLuint s_bound_tex = 0;
+static GLuint s_default_tex = 0;
 
 static void setup_lights(void);
 
@@ -47,6 +48,26 @@ void gfx_init(void) {
     s_current.fog_color[3] = 1.0f;
 
     s_stack_depth = 0;
+
+    /*
+     * A 1x1 white texture is the implicit texture whenever a pass enables
+     * GL_TEXTURE_2D without binding its own. GL_MODULATE with white is the
+     * identity, so untextured geometry keeps its vertex colour instead of
+     * sampling the incomplete default texture object (which renders nothing).
+     */
+    {
+        static const GLubyte white[4] = { 255, 255, 255, 255 };
+        glGenTextures(1, &s_default_tex);
+        glBindTexture(GL_TEXTURE_2D, s_default_tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, white);
+        glBindTexture(GL_TEXTURE_2D, s_default_tex);
+        s_bound_tex = s_default_tex;
+    }
 
     setup_lights();
 }
@@ -160,6 +181,8 @@ void gfx_pop(void) {
 }
 
 void gfx_bind_texture(GLuint tex) {
+    if (tex == 0)
+        tex = s_default_tex;
     s_bound_tex = tex;
     glBindTexture(GL_TEXTURE_2D, tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, s_current.filter);
