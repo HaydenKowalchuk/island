@@ -10,6 +10,7 @@
 #include "car.h"
 #include "chase_cam.h"
 #include "input.h"
+#include "lod.h"
 #include "mesh.h"
 #include "render.h"
 #include "terrain.h"
@@ -43,6 +44,9 @@ static Mesh s_parcel;
 static ChaseCam s_chase;
 static CarState s_veh;
 static float s_bank = 0.0f; /* radians; leans into the turn */
+
+/* Active camera position, sampled each render for prop LOD (island1-1927). */
+static float s_cam_pos[3];
 
 /*
  * Player mode (island1-zku4): the player is either driving the hover car or
@@ -120,6 +124,7 @@ static vec3 s_pkg_pos;
 static unsigned int s_rng = 0x1234567u;
 static Mesh s_pack;
 static Mesh s_house;
+static Mesh s_house_lod; /* simplified body-only house for the mid LOD band */
 static Mesh s_depot_mesh;
 
 static unsigned int rng_next(void) {
@@ -342,6 +347,11 @@ static void build_house(void) {
 
   mesh_add_box(&s_house, (const float[]){0.0f, 0.7f, 1.52f},
                (const float[]){0.42f, 0.7f, 0.08f}, door);
+
+  /* Mid-distance LOD: the wall box only, no roof/door/eaves. */
+  mesh_make(&s_house_lod);
+  mesh_add_box(&s_house_lod, (const float[]){0.0f, 1.05f, 0.0f},
+               (const float[]){1.8f, 1.05f, 1.5f}, wall);
 }
 
 /* The package depot: a low pad with a post and a bright sign (island1-draq). */
@@ -427,6 +437,7 @@ void game_shutdown(void) {
   mesh_destroy(&s_player_mesh);
   mesh_destroy(&s_pack);
   mesh_destroy(&s_house);
+  mesh_destroy(&s_house_lod);
   mesh_destroy(&s_depot_mesh);
 }
 
@@ -931,6 +942,9 @@ static void emit_parcel(float t) {
     glm_rotate(world, t * 0.8f, (vec3){0.0f, 1.0f, 0.0f});
   }
 
+  if (lod_level(world[3][0] - s_cam_pos[0], world[3][2] - s_cam_pos[2]) ==
+      LOD_FAR)
+    return;
   r_mesh(&s_parcel, (const float *)world, white);
 }
 
@@ -945,7 +959,12 @@ static void emit_houses(float t) {
     glm_mat4_identity(world);
     glm_translate(world, s_houses[i].base);
     glm_rotate(world, s_houses[i].facing, (vec3){0.0f, 1.0f, 0.0f});
-    r_mesh(&s_house, (const float *)world, white);
+    LodLevel lod = lod_level(s_houses[i].base[0] - s_cam_pos[0],
+                             s_houses[i].base[2] - s_cam_pos[2]);
+    if (lod == LOD_FAR)
+      continue;
+    r_mesh(lod == LOD_NEAR ? &s_house : &s_house_lod, (const float *)world,
+           white);
   }
 }
 
@@ -957,6 +976,9 @@ static void emit_depot(float t) {
 
   mat4 world;
   glm_mat4_identity(world);
+  if (lod_level(s_depot[0] - s_cam_pos[0], s_depot[2] - s_cam_pos[2]) ==
+      LOD_FAR)
+    return;
   glm_translate(world, s_depot);
   r_mesh(&s_depot_mesh, (const float *)world, white);
 }
@@ -971,6 +993,9 @@ static void emit_residents(float t) {
     glm_mat4_identity(world);
     glm_translate(world, s_houses[i].resident);
     glm_rotate(world, s_houses[i].look, (vec3){0.0f, 1.0f, 0.0f});
+    if (lod_level(s_houses[i].resident[0] - s_cam_pos[0],
+                  s_houses[i].resident[2] - s_cam_pos[2]) != LOD_NEAR)
+      continue;
     r_mesh(&s_player_mesh, (const float *)world, HOUSE_TINT[i]);
   }
 }
@@ -1066,6 +1091,11 @@ void game_render(float frame_dt) {
     cam_update(&s_cam, s_view_w, s_view_h);
     r_camera((const float *)s_cam.view, (const float *)s_cam.proj);
   }
+
+  const float *cam = (s_cam_mode == CAM_CHASE) ? s_chase.pos : s_cam.pos;
+  s_cam_pos[0] = cam[0];
+  s_cam_pos[1] = cam[1];
+  s_cam_pos[2] = cam[2];
 
   emit_sky();
   emit_ocean(s_time);
