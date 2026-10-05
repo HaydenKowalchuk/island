@@ -40,7 +40,7 @@ elif opt_platform == 'dreamcast'
   add_project_arguments('-fsingle-precision-constant', '-mpretend-cmove', language: 'c')
 elif opt_platform == 'psp'
 else
-  error('Unsupported platform: ' + opt_platform + ' (desktop or dreamcast)')
+  error('Unsupported platform: ' + opt_platform + ' (desktop, psp or dreamcast)')
 endif
 
 # Math for view/projection matrices (header-only, used by every backend).
