@@ -15,6 +15,7 @@ void mesh_quad(const float a[3], const float b[3], const float c[3], const float
     draw.prim = R_QUADS;
     draw.first = first;
     draw.count = 4;
+    draw.composite = R_COMPOSITE_OPAQUE;
     draw.fog = fog;
     draw.lit = lit;
     draw.cull = cull;

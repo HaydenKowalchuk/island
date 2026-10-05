@@ -69,6 +69,7 @@ same struct.
 | `prim` | R_TRIANGLES / R_LINES / R_QUADS | `gl_mode()` → GL_TRIANGLES / GL_LINES / GL_QUADS |
 | `first`, `count` | contiguous run in `frame->verts` | immediate-mode loop |
 | `mesh`, `world` | reusable Mesh + column-major transform | client arrays + `glDrawElements(GL_TRIANGLES, u16)` + `glMultMatrixf` |
+| `composite` | R_COMPOSITE_OPAQUE / _CUTOUT / _TRANSLUCENT / _OVERLAY | see below — no GL equivalent, DEAD today |
 | `screen_space` | [0,1] ortho projection (HUD, sky) | `gfx_screen_begin_unit()` |
 | `lit` | vertex lighting | DEAD — always 0 (island1-agob) |
 | `fog` | per-draw fog on/off | GL_FOG + frame fog start/end/colour |
@@ -78,6 +79,32 @@ same struct.
 | `textured` | GL_TEXTURE_2D + per-mesh bind | `gfx_bind_texture()` |
 | `tint[4]` | per-draw colour multiplier | scaled scratch copy (meshes) / immediate multiply (recorded verts) |
 | `pass` | RPass, stamped by `r_draw()` | F3 stats/overlay only |
+
+#### `composite` — declared list intent (island1-m4g4)
+
+`composite` says what a draw **is**, so a backend picks a native list instead of
+inferring one from `blend` or the pass enum:
+
+| class | meaning | Dreamcast | PSP |
+| --- | --- | --- | --- |
+| `R_COMPOSITE_OPAQUE` | solid, sorts with the scene, writes depth | `PVR_LIST_OP_POLY` | depth test + write |
+| `R_COMPOSITE_CUTOUT` | alpha-tested, per-pixel discard | `PVR_LIST_PT_POLY` | `GU_ALPHA_TEST` (island1-qb9x) |
+| `R_COMPOSITE_TRANSLUCENT` | alpha-blended over the scene, back to front | `PVR_LIST_TR_POLY` | blend, no depth write |
+| `R_COMPOSITE_OVERLAY` | HUD/2D, drawn over everything | `PVR_LIST_PT_POLY` | no depth test/write |
+
+OVERLAY has no PVR list of its own and shares PT with CUTOUT: PT renders after
+translucent, which is what "over everything" needs. The core states the intent;
+which bin achieves it is the backend's business, so no PVR/GE concept appears in
+`render.h`.
+
+`screen_space` stays orthogonal — it only picks the projection. The sky is
+screen-space but still OPAQUE (it must sort and depth-test behind the island),
+while HUD rects and text are screen-space AND OVERLAY. Before this, DC had to
+guess both from `pass == R_PASS_HUD`, which meant a screen-space scene draw was
+indistinguishable from a HUD one.
+
+The desktop ignores `composite`: every class already sets `blend` and
+`screen_space` consistently, so desktop output is unchanged.
 
 ### RenderFrame
 
@@ -124,12 +151,13 @@ incomplete default texture object (which renders nothing).
 | `r_fog(...)` | fog enabled/colour/start/end |
 | `r_vertex(...)` | one RVertex; returns index or -1 when full |
 | `r_draw(draw)` | one RDraw, stamped with the current RPass |
-| `r_mesh(mesh, world, tint)` | reusable mesh draw (triangles, fog, depth write, backface cull) |
-| `r_billboard(pos, w, h, color)` | camera-facing quad as 4 world-space triangles |
-| `r_rect_2d(x, y, w, h, color)` | screen-space alpha-blended quad |
-| `r_ribbon(pts, n, width, color)` | flat world-space strip (wake/road), batched |
-| `r_text_2d(x, y, scale, s, color)` | batched 8x8 glyph quads (one draw per string) |
+| `r_mesh(mesh, world, tint)` | reusable mesh draw (triangles, fog, depth write, backface cull) — OPAQUE |
+| `r_billboard(pos, w, h, color)` | camera-facing quad as 4 world-space triangles — TRANSLUCENT |
+| `r_rect_2d(x, y, w, h, color)` | screen-space alpha-blended quad — OVERLAY |
+| `r_ribbon(pts, n, width, color)` | flat world-space strip (wake/road), batched — TRANSLUCENT |
+| `r_text_2d(x, y, scale, s, color)` | batched 8x8 glyph quads (one draw per string) — OVERLAY |
 | `r_pass(p)` / `r_pass_name(p)` | current pass tag for stats |
+| `r_composite_name(c)` | short label for a composite class, e.g. "OVERLAY" |
 
 ## Lighting model (decision)
 

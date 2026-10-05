@@ -46,6 +46,30 @@ typedef enum {
     R_PASS_COUNT
 } RPass;
 
+/*
+ * How a draw must be composited: what the draw *is*, in terms the hardware can
+ * sort and discard. This is the declaration that lets a backend pick its native
+ * list instead of inferring one from `blend` or the pass enum.
+ *
+ *   OPAQUE      solid geometry; sorts with the scene and writes depth
+ *   CUTOUT      alpha-tested; sorts with the scene, per-pixel discard
+ *   TRANSLUCENT alpha-blended over the solid pass, back to front
+ *   OVERLAY     HUD/2D; drawn last, over everything, ignoring scene depth
+ *
+ * On the Dreamcast these map onto the three PVR polygon lists (OP, PT, TR).
+ * OVERLAY has no PVR list of its own, so the backend shares PT with CUTOUT —
+ * PT is the list the PVR renders after translucent, which is what "over
+ * everything" needs. The core states the intent; which bin achieves it is the
+ * backend's business, so no PVR/GE concepts leak into this header.
+ */
+typedef enum {
+    R_COMPOSITE_OPAQUE,
+    R_COMPOSITE_CUTOUT,
+    R_COMPOSITE_TRANSLUCENT,
+    R_COMPOSITE_OVERLAY,
+    R_COMPOSITE_COUNT
+} RComposite;
+
 /* Defined in mesh.h. Forward-declared so RDraw can reference one. */
 struct Mesh;
 
@@ -54,8 +78,10 @@ struct Mesh;
  * reference to a reusable `mesh` drawn with `world` (column-major). Mixing both
  * in one ordered list keeps pass/camera ordering intact.
  *
- * `screen_space` draws use a normalised [0,1] ortho projection (HUD, sky);
- * otherwise vertices are in world space and the camera matrices apply.
+ * `screen_space` picks the projection for the vertices: a normalised [0,1] ortho
+ * instead of the camera matrices. It is orthogonal to `composite` — the sky is
+ * screen-space but still part of the scene (OPAQUE), while a HUD quad is
+ * screen-space and OVERLAY. OVERLAY draws are always screen-space.
  */
 typedef struct {
     RPrim prim;
@@ -65,7 +91,8 @@ typedef struct {
     const struct Mesh* mesh;
     float world[16];
 
-    int screen_space;
+    RComposite composite; /* what the draw is; backends map this to a native list */
+    int screen_space;     /* 1 = normalised [0,1] ortho, 0 = world space */
     int lit;
     int fog;
     int blend;
@@ -119,6 +146,9 @@ void r_pass(RPass pass);
 
 /* Short fixed label for a pass, e.g. "OCEAN". */
 const char* r_pass_name(RPass pass);
+
+/* Short fixed label for a composite class, e.g. "TRANSLUCENT". */
+const char* r_composite_name(RComposite composite);
 
 /*
  * Draw a reusable mesh (see mesh.h) transformed by `world` (column-major, may

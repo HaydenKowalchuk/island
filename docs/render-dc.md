@@ -47,15 +47,22 @@ KallistiOS sources (`kernel/arch/dreamcast/{hardware,include}/pvr`, `examples`)
 
 | RenderFrame / RDraw | Dreamcast |
 | --- | --- |
-| mesh draws (R_TRIANGLES) | PVR_LIST_OP_POLY; expand 16-bit indices into triangle strips |
-| blend draws | PVR_LIST_TR_POLY (HW sorts; no manual sorting needed from us) |
-| alpha_test (island1-qb9x) | PVR_LIST_PT_POLY — punch-through is native alpha discard; no blending, no sorting issues |
+| `composite` = OPAQUE | PVR_LIST_OP_POLY; expand 16-bit indices into triangle strips |
+| `composite` = TRANSLUCENT | PVR_LIST_TR_POLY (HW sorts; no manual sorting needed from us) |
+| `composite` = CUTOUT (island1-qb9x) | PVR_LIST_PT_POLY — punch-through is native alpha discard; no blending, no sorting issues |
+| `composite` = OVERLAY | PVR_LIST_PT_POLY — shares PT with CUTOUT; PT renders after translucent, which is what "over everything" needs |
 | R_QUADS | **no quad primitive** — expand each quad to a 2-triangle strip CPU-side |
 | R_LINES | 2-vertex line strips |
 | billboards | already world-space triangles — submit directly |
 | screen_space 2D | ortho-transform CPU-side into screen-space verts; HUD rect/text as tris or sprites |
+| screen_space depth | OVERLAY → z 1.0 (nearest); other screen draws → znear/fog_end (farthest non-zero; z = 0 is infinity to the ISP) |
 | fog | pvr_fog_table_linear + pvr_fog_table_color over the frame's start/end; per-header fog type |
 | tint | multiply into vertex colours on CPU at submit |
+
+List choice and screen-space depth come straight from `RDraw::composite` — see
+island1-m4g4 and docs/render.md. Before that they were guessed from `blend` and
+`pass == R_PASS_HUD`, which made the sky (screen-space, but scene) and the HUD
+(screen-space, overlay) indistinguishable to the backend.
 | cull | polygon-header culling: PVR_CULLING_CCW/CW to match our GL_CCW winding |
 | scissor (island1-4t0s) | user clip in the polygon header (PVR_USERCLIP_INSIDE) |
 | tex_env (island1-01nc) | MODULATE → PVR_TXRENV_MODULATE; REPLACE → PVR_TXRENV_REPLACE; ADD → blend (src ONE + dst ONE, blend enabled) |
@@ -81,7 +88,9 @@ cglm). There is no hardware matrix stack to load, unlike the desktop backend.
 4. **Punch-through = alpha test**: submit alpha-tested draws to PT_POLY — no
    blending, no transparent-sorting artefacts, sorts with opaque. Keep
    blended draws on TR_POLY. A draw cannot be both (they are different
-   lists) — alpha_test and blend stay mutually exclusive per draw.
+   lists) — so `R_COMPOSITE_CUTOUT` and `R_COMPOSITE_TRANSLUCENT` are mutually
+   exclusive per draw, and the core declares which rather than leaving the
+   backend to infer it from `blend`.
 5. **Blend is per-header and opt-in** (KOS context defaults leave
    src_enable/dst_enable = PVR_BLEND_DISABLE) — set both when translucency is
    wanted.

@@ -694,6 +694,9 @@ static void emit_sky(void) {
   d.first = base;
   d.count = 4;
   d.screen_space = 1;
+  /* Screen-space, but part of the scene rather than an overlay: it must sort and
+   * depth-test like solid geometry so it sits behind the island. */
+  d.composite = R_COMPOSITE_OPAQUE;
   d.tint[0] = d.tint[1] = d.tint[2] = d.tint[3] = 1.0f;
   r_draw(&d);
 }
@@ -876,6 +879,7 @@ static void emit_ocean(float t) {
   d.prim = R_QUADS;
   d.first = first;
   d.count = count;
+  d.composite = R_COMPOSITE_OPAQUE;
   d.fog = 1;
   d.depth_write = 1;
   d.cull = R_CULL_BACK;

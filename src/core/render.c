@@ -23,6 +23,10 @@ static const char* const s_pass_names[R_PASS_COUNT] = {
     "OTHER", "SKY", "OCEAN", "TERRAIN", "PROPS", "VEH", "PART", "HUD"
 };
 
+static const char* const s_composite_names[R_COMPOSITE_COUNT] = {
+    "OPAQUE", "CUTOUT", "TRANSLUCENT", "OVERLAY"
+};
+
 void r_pass(RPass pass) {
     if (pass >= 0 && pass < R_PASS_COUNT)
         s_pass = pass;
@@ -32,6 +36,12 @@ const char* r_pass_name(RPass pass) {
     if (pass < 0 || pass >= R_PASS_COUNT)
         return "?";
     return s_pass_names[pass];
+}
+
+const char* r_composite_name(RComposite composite) {
+    if (composite < 0 || composite >= R_COMPOSITE_COUNT)
+        return "?";
+    return s_composite_names[composite];
 }
 
 void r_viewport(int width, int height) {
@@ -111,6 +121,7 @@ void r_mesh(const struct Mesh* mesh, const float world[16], const float tint[4])
     RDraw d = { 0 };
     d.prim = R_TRIANGLES;
     d.mesh = mesh;
+    d.composite = R_COMPOSITE_OPAQUE;
     d.fog = 1;
     d.depth_write = 1;
     d.cull = R_CULL_BACK;
@@ -153,6 +164,7 @@ void r_billboard(const float pos[3], float w, float h, const float color[4]) {
     draw.prim = R_QUADS;
     draw.first = first;
     draw.count = 4;
+    draw.composite = R_COMPOSITE_TRANSLUCENT;
     draw.fog = 1;
     draw.blend = 1;
     draw.depth_write = 1;
@@ -172,6 +184,7 @@ void r_rect_2d(float x, float y, float w, float h, const float color[4]) {
     draw.first = first;
     draw.count = 4;
     draw.screen_space = 1;
+    draw.composite = R_COMPOSITE_OVERLAY;
     draw.blend = 1;
     draw.depth_write = 0;
     draw.cull = R_CULL_NONE;
@@ -232,6 +245,7 @@ void r_ribbon(const float* pts, int n, float width, const float color[4]) {
     draw.prim = R_QUADS;
     draw.first = first;
     draw.count = count;
+    draw.composite = R_COMPOSITE_TRANSLUCENT;
     draw.fog = 1;
     draw.blend = 1;
     draw.depth_write = 0;
@@ -297,6 +311,7 @@ void r_text_2d(int x, int y, float scale, const char* s, const float color[4]) {
     draw.first = first;
     draw.count = count;
     draw.screen_space = 1;
+    draw.composite = R_COMPOSITE_OVERLAY;
     draw.blend = 1;
     draw.depth_write = 0;
     draw.cull = R_CULL_NONE;

@@ -301,22 +301,41 @@ static int dc_emit_tri(const float *m, int screen_space, int fog, float z2d,
 }
 
 /*
- * Which PVR list a draw belongs to. Punch-through (alpha test) comes with
- * island1-qb9x; until then no draw lands there. On the PVR the lists render
- * in fixed order (opaque, translucent, punch-through) and the TA sorts within
- * each list, so the recorder's draw order only picks the list — no painter's
- * sorting is needed from us.
+ * Which PVR list a draw belongs to, straight from the declared composite class
+ * (island1-m4g4). The recorder says what each draw *is*; this is where that
+ * intent becomes a native list.
+ *
+ * On the PVR the lists render in fixed order (opaque, translucent, punch-through)
+ * and the TA sorts within each list, so the recorder's draw order only picks the
+ * list — no painter's sorting is needed from us.
+ *
+ * OVERLAY has no PVR list of its own, so it shares PT with CUTOUT: PT renders
+ * after translucent, which is exactly what "over everything" needs, and it sorts
+ * like opaque so the HUD's flat quads keep their submission order.
  */
 static pvr_list_t dc_list_of(const RDraw *d) {
-  /* Solid screen-space HUD renders LAST: punch-through polys are sorted like
-   * opaque and render after the translucent list, so the HUD sits on top of
-   * everything without depending on the TR depth compare (which behaves
-   * differently vs the cleared Z). */
-  if (d->screen_space && d->pass == R_PASS_HUD)
+  switch (d->composite) {
+  case R_COMPOSITE_OPAQUE:
+    return PVR_LIST_OP_POLY;
+  case R_COMPOSITE_CUTOUT:
+  case R_COMPOSITE_OVERLAY:
     return PVR_LIST_PT_POLY;
-  if (d->blend)
+  case R_COMPOSITE_TRANSLUCENT:
     return PVR_LIST_TR_POLY;
-  return PVR_LIST_OP_POLY;
+  default:
+    return PVR_LIST_OP_POLY;
+  }
+}
+
+/* Depth for a screen-space draw, which the ortho transform gives no usable z. */
+static float dc_depth_2d(const RenderFrame *frame, const RDraw *d) {
+  /* Overlays ignore scene depth, so pin them at the near plane. */
+  if (d->composite == R_COMPOSITE_OVERLAY)
+    return 1.0f;
+  /* Screen-space scene draws (the sky) must sit behind everything else, so give
+   * them the farthest depth that still passes the GREATER test against the
+   * cleared Z of 0. */
+  return (frame->fog_end > 0.0f) ? s_znear / frame->fog_end : 0.001f;
 }
 
 static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
@@ -377,14 +396,12 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
   int fog = d->fog && frame->fog_enabled && !screen_space;
 
   /*
-   * Screen-space z, per draw: HUD closest (1.0) so it sorts on top within the
-   * translucent list; the sky sits at the fog end — the farthest non-zero
-   * W-buffer depth (z = 0 is infinity in the ISP's perspective math).
+   * Screen-space z, decided by the declared class rather than the pass enum: an
+   * overlay goes closest (1.0) so it wins the depth compare, while a screen-space
+   * scene draw (the sky) sits at the fog end — the farthest non-zero W-buffer
+   * depth (z = 0 is infinity in the ISP's perspective math).
    */
-  float z2d = 1.0f;
-  if (d->pass != R_PASS_HUD) {
-    z2d = (frame->fog_end > 0.0f) ? s_znear / frame->fog_end : 0.001f;
-  }
+  float z2d = dc_depth_2d(frame, d);
 
   const RVertex *verts = frame->verts;
   int written = 0;
@@ -431,10 +448,10 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
     /* Bring-up instrumentation: what the ocean/HUD draws actually became. */
     if (s_dbg_prints > 0 &&
         (d->pass == R_PASS_OCEAN || d->pass == R_PASS_HUD) && written > 0) {
-        printf("dc: pass=%d prim=%d first=%d cnt=%d ss=%d list=%d w=%d "
+        printf("dc: pass=%d prim=%d comp=%d first=%d cnt=%d ss=%d list=%d w=%d "
                "v0=(%.1f,%.1f,%.4f) v1=(%.1f,%.1f,%.4f) v2=(%.1f,%.1f,%.4f)\n",
-               (int)d->pass, (int)d->prim, d->first, d->count, d->screen_space,
-               (int)list, written, s_scratch[0].x, s_scratch[0].y,
+               (int)d->pass, (int)d->prim, (int)d->composite, d->first, d->count,
+               d->screen_space, (int)list, written, s_scratch[0].x, s_scratch[0].y,
                s_scratch[0].z, s_scratch[1].x, s_scratch[1].y, s_scratch[1].z,
                s_scratch[2].x, s_scratch[2].y, s_scratch[2].z);
         s_dbg_prints--;

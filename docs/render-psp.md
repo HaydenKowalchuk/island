@@ -40,8 +40,16 @@ Decisions taken while implementing, in priority order:
 - Lighting stays baked (vertex colours); `GU_LIGHTING` is never enabled.
 - Fog **is** hardware: `sceGuFog(fog_start, fog_end, sky)` + `GU_FOG`. This
   supersedes the "CPU vertex-colour fog" note in island1-gi02's description.
-- Screen-space HUD/sky uses the GE's `GU_TRANSFORM_3D` with a `[0,1]` ortho and
-  depth test disabled, matching GL's bottom-left origin.
+- Screen-space HUD/sky uses the GE's `GU_TRANSFORM_3D` with a `[0,1]` ortho,
+  matching GL's bottom-left origin. Depth test is keyed off the draw's declared
+  `RComposite` class (island1-m4g4), not off `screen_space`: an
+  `R_COMPOSITE_OVERLAY` (HUD rects/text) neither tests against nor writes scene
+  depth, while the screen-space sky is OPAQUE and keeps depth testing. The GE has
+  no per-draw polygon lists, so the class reaches hardware only through depth
+  test/write and blend; the DC maps the same class onto PVR lists. Behaviour is
+  unchanged from before the class existed — the sky is the first draw after the
+  clear, and the depth buffer clears to 0 with `GU_GEQUAL`, so it passes either
+  way.
 
 Verified in PPSSPP: the frame matches the desktop build (passes, winding, depth,
 fog, textures and screen-space HUD all correct), so the matrix/winding/depth

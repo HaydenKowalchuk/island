@@ -39,6 +39,47 @@ int main(void) {
     printf("api-smoke: verts=%d draws=%d mesh=%d raw=%d screen=%d\n",
            f->vert_count, f->draw_count, mesh_draws, raw_draws, screen_draws);
 
+    /*
+     * Composite classes (island1-m4g4): every draw must declare what it is so a
+     * backend can pick a native list instead of inferring one. The load-bearing
+     * case is that screen_space alone does not mean HUD — the sky is screen-space
+     * yet still sorts and depth-tests as scene geometry, while HUD rects and text
+     * are overlays.
+     */
+    int comp_draws[R_COMPOSITE_COUNT];
+    for (int i = 0; i < R_COMPOSITE_COUNT; i++)
+        comp_draws[i] = 0;
+    int hud_overlay = 0, hud_not_overlay = 0;
+    int sky_overlay = 0, sky_not_opaque = 0;
+    int translucent_not_blend = 0, overlay_not_screen = 0;
+    for (int i = 0; i < f->draw_count; i++) {
+        const RDraw* d = &f->draws[i];
+        if (d->composite < 0 || d->composite >= R_COMPOSITE_COUNT)
+            return 1;
+        comp_draws[d->composite]++;
+
+        if (d->pass == R_PASS_HUD) {
+            if (d->composite == R_COMPOSITE_OVERLAY)
+                hud_overlay++;
+            else
+                hud_not_overlay++;
+            if (!d->screen_space)
+                overlay_not_screen++;
+        }
+        if (d->pass == R_PASS_SKY) {
+            if (d->composite == R_COMPOSITE_OVERLAY)
+                sky_overlay++;
+            else
+                sky_not_opaque++;
+        }
+        if (d->composite == R_COMPOSITE_TRANSLUCENT && !d->blend)
+            translucent_not_blend++;
+    }
+    printf("api-smoke: composite");
+    for (int i = 0; i < R_COMPOSITE_COUNT; i++)
+        printf(" %s=%d", r_composite_name((RComposite)i), comp_draws[i]);
+    printf("\n");
+
     /* Per-pass submitted-vertex/draw counters (island1-eyai). */
     printf("api-smoke: stats total=%dv/%dd |", f->stat_verts, f->stat_draws);
     for (int i = 0; i < R_PASS_COUNT; i++) {
@@ -97,6 +138,14 @@ int main(void) {
     if (hill <= 1.0f || offmap > -100.0f)
         return 1;
     if (nlen < 0.99f || nlen > 1.01f || nrm[1] < 0.5f)
+        return 1;
+
+    /* Composite declarations must be present and consistent (island1-m4g4). */
+    if (comp_draws[R_COMPOSITE_OPAQUE] == 0 || comp_draws[R_COMPOSITE_OVERLAY] == 0)
+        return 1;
+    if (hud_overlay == 0 || hud_not_overlay != 0 || overlay_not_screen != 0)
+        return 1;
+    if (sky_overlay != 0 || sky_not_opaque == 0 || translucent_not_blend != 0)
         return 1;
 
     return 0;

@@ -166,10 +166,16 @@ static void apply_state(const RenderFrame* f, const RDraw* d, int textured, int 
     if (screen)
         use_screen();
 
+    /* The GE has no per-draw lists, so the declared composite class (island1-m4g4)
+     * only reaches hardware through depth: an overlay must draw over everything,
+     * so it neither tests against nor writes scene depth. A screen-space draw that
+     * is *not* an overlay (the sky) is part of the scene and keeps depth testing. */
+    int overlay = (d->composite == R_COMPOSITE_OVERLAY);
+
     set_fog(d->fog && f->fog_enabled);
     set_blend(d->blend);
-    set_dtest(!screen);
-    set_dwrite(screen ? 0 : d->depth_write);
+    set_dtest(!overlay);
+    set_dwrite(overlay ? 0 : d->depth_write);
     set_cull(!screen && d->cull == R_CULL_BACK);
     set_tex(textured);
 }
