@@ -75,8 +75,8 @@ void render_init(void) {
   static const pvr_init_params_t pvr_params = {
       .opb_sizes =
           {
-              PVR_BINSIZE_16, PVR_BINSIZE_0, PVR_BINSIZE_16, PVR_BINSIZE_0,
-              PVR_BINSIZE_16,
+              PVR_BINSIZE_32, PVR_BINSIZE_0, PVR_BINSIZE_32, PVR_BINSIZE_0,
+              PVR_BINSIZE_32,
           },
       .vertex_buf_size = 512 * 1024,
       .autosort_disabled = 0,
@@ -308,6 +308,12 @@ static int dc_emit_tri(const float *m, int screen_space, int fog, float z2d,
  * sorting is needed from us.
  */
 static pvr_list_t dc_list_of(const RDraw *d) {
+  /* Solid screen-space HUD renders LAST: punch-through polys are sorted like
+   * opaque and render after the translucent list, so the HUD sits on top of
+   * everything without depending on the TR depth compare (which behaves
+   * differently vs the cleared Z). */
+  if (d->screen_space && d->pass == R_PASS_HUD)
+    return PVR_LIST_PT_POLY;
   if (d->blend)
     return PVR_LIST_TR_POLY;
   return PVR_LIST_OP_POLY;
@@ -349,7 +355,9 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
 
   pvr_poly_hdr_t hdr;
   pvr_poly_compile(&hdr, &cxt);
-  pvr_prim(&hdr, sizeof(hdr));
+  int rc = pvr_prim(&hdr, sizeof(hdr));
+  if (s_dbg_prints > 0 && rc != 0)
+    printf("dc ERR: pvr_prim hdr pass=%d = %d\n", (int)d->pass, rc);
 
   /* Combined matrix proj * view * world (GL column-major). Recorded draws'
    * world is unset (zeros — the desktop's recorded path ignores it), so their
@@ -414,8 +422,11 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
     /* R_LINES: the TA has no line primitive; skipped for now (dev-only
      * draws). Add thin-quad expansion here if lines ever matter on console. */
 
-    if (written > 0)
-        pvr_prim(s_scratch, (unsigned int)written * sizeof(pvr_vertex_t));
+    if (written > 0) {
+      int rc = pvr_prim(s_scratch, (unsigned int)written * sizeof(pvr_vertex_t));
+      if (s_dbg_prints > 0 && rc != 0)
+        printf("dc ERR: pvr_prim verts pass=%d = %d\n", (int)d->pass, rc);
+    }
 
     /* Bring-up instrumentation: what the ocean/HUD draws actually became. */
     if (s_dbg_prints > 0 &&
@@ -431,14 +442,18 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
 }
 
 static void dc_submit_list(pvr_list_t list, const RenderFrame *frame) {
-  pvr_list_begin(list);
+  int rc = pvr_list_begin(list);
+  if (s_dbg_prints > 0 && rc != 0)
+    printf("dc ERR: pvr_list_begin(%d) = %d\n", (int)list, rc);
   for (int i = 0; i < frame->draw_count; i++) {
     const RDraw *d = &frame->draws[i];
     if (dc_list_of(d) != list)
       continue;
     dc_submit_draw(frame, d, list);
   }
-  pvr_list_finish();
+  rc = pvr_list_finish();
+  if (s_dbg_prints > 0 && rc != 0)
+    printf("dc ERR: pvr_list_finish(%d) = %d\n", (int)list, rc);
 }
 
 void render_present(int fb_w, int fb_h) {

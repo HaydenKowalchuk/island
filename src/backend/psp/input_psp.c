@@ -2,20 +2,23 @@
 
 #include <pspctrl.h>
 
+#include "game.h"  /* game_mode(): the mapping is mode-aware */
 #include "input.h" /* core input contract */
 
 /*
- * PSP controller binding table (island1-rggc). The pad is digital plus a small
- * analog nub; there is no mouse, so ACT_LOOK is never held and the chase camera
- * stays automatic.
+ * PSP controller binding table (island1-rggc, mode-aware). The pad is digital
+ * plus a small analog nub; there is no mouse, so ACT_LOOK is never held and
+ * the chase camera stays automatic.
  *
- *   Cross    -> ACT_THROTTLE (and AX_THROTTLE)   Circle -> ACT_BRAKE (AX_BRAKE)
- *   L        -> ACT_BOOST                         Square -> ACT_INTERACT
+ *   L        -> throttle (vehicle, digital)   R  -> brake (vehicle, digital)
+ *   Cross    -> boost                             Square -> ACT_INTERACT
  *   Triangle -> ACT_VEHICLE                       Start  -> ACT_PAUSE
  *   Select   -> ACT_DEV_DEBUG                     Home   -> ACT_QUIT
- *   nub X    -> AX_STEER, nub Y -> fwd/back (AX_THROTTLE / AX_BRAKE), so the
- *              car and the on-foot player both steer and move on one stick;
+ *   nub X    -> AX_STEER; nub Y -> fwd/back on foot only (AX_THROTTLE /
+ *              AX_BRAKE), so the walking player moves on the stick alone;
  *              D-pad steers when the nub is centred.
+ *
+ * The vehicle is driven ONLY by the triggers; on foot the stick alone moves.
  */
 
 #define NUB_CENTER 128
@@ -61,9 +64,7 @@ void backend_input_poll(void) {
 
     unsigned int b = pad.Buttons;
 
-    key_event(b, PSP_CTRL_CROSS, ACT_THROTTLE);
-    key_event(b, PSP_CTRL_CIRCLE, ACT_BRAKE);
-    key_event(b, PSP_CTRL_LTRIGGER, ACT_BOOST);
+    key_event(b, PSP_CTRL_CROSS, ACT_BOOST);
     key_event(b, PSP_CTRL_SQUARE, ACT_INTERACT);
     key_event(b, PSP_CTRL_TRIANGLE, ACT_VEHICLE);
     key_event(b, PSP_CTRL_START, ACT_PAUSE);
@@ -84,18 +85,17 @@ void backend_input_poll(void) {
     /* No second stick, so the pad has no camera pan; keep the axis at zero. */
     input_event_axis(AX_LOOK_Y, 0.0f);
 
-    /* Nub up/down drives throttle/brake (up = positive). Combine with the
-     * digital Cross/Circle so the stick alone moves the car or the walking
-     * player. */
-    float fwd = -nub_axis(pad.Ly, FWD_DEADZONE);
-    float throttle = (b & PSP_CTRL_CROSS) ? 1.0f : 0.0f;
-    float brake = (b & PSP_CTRL_CIRCLE) ? 1.0f : 0.0f;
-    if (fwd > throttle)
-        throttle = fwd;
-    if (-fwd > brake)
-        brake = -fwd;
-    input_event_axis(AX_THROTTLE, throttle);
-    input_event_axis(AX_BRAKE, brake);
+    if (game_mode() == GAME_MODE_DRIVE) {
+        /* Vehicle: the triggers are the throttle/brake (digital, full level);
+         * the nub contributes nothing here. */
+        input_event_axis(AX_THROTTLE, (b & PSP_CTRL_LTRIGGER) ? 1.0f : 0.0f);
+        input_event_axis(AX_BRAKE, (b & PSP_CTRL_RTRIGGER) ? 1.0f : 0.0f);
+    } else {
+        /* On foot: the stick alone moves — Y = fwd/back (up = forward). */
+        float fwd = -nub_axis(pad.Ly, FWD_DEADZONE);
+        input_event_axis(AX_THROTTLE, (fwd > 0.0f) ? fwd : 0.0f);
+        input_event_axis(AX_BRAKE, (fwd < 0.0f) ? -fwd : 0.0f);
+    }
 
     s_prev_buttons = b;
 }

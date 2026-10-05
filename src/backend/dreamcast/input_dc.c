@@ -4,25 +4,31 @@
 
 #include <kos.h>
 
+#include "game.h"  /* game_mode(): the mapping is mode-aware */
 #include "input.h" /* core input contract */
 
 /*
- * Dreamcast binding table (island1-19s3's provisional mapping). This is where
- * maple controller hardware is mapped onto the platform-agnostic Action/axis
+ * Dreamcast binding table (island1-19s3, mode-aware). This is where maple
+ * controller hardware is mapped onto the platform-agnostic Action/axis
  * contract via the same input_event_* functions the desktop backend calls.
  *
- *   A (green)      -> throttle (and AX_THROTTLE)  B (blue) -> brake (AX_BRAKE)
- *   L trigger      -> boost (analog fine: past half pull)
+ *   L trigger      -> throttle (vehicle, analog lever 0..1)
+ *   R trigger      -> brake    (vehicle, analog lever 0..1)
+ *   A (green)      -> boost
  *   Y (red)        -> interact (pickup / deliver / talk)
  *   X (yellow)     -> vehicle (enter / exit)
- *   analog stick   -> AX_STEER (x) and fwd/back (y -> AX_THROTTLE/AX_BRAKE), so
- *                     the car and the on-foot player both steer and move on
- *                     one stick; D-pad steers when the stick is centred
+ *   analog stick   -> AX_STEER (x); on foot also fwd/back (y -> AX_THROTTLE /
+ *                     AX_BRAKE), so the walking player moves on the stick
+ *                     alone; D-pad steers when the stick is centred
  *   Start          -> pause
  *   A+B+X+Y+Start  -> quit (KOS convention for exiting)
  *
  * No mouse: ACT_LOOK stays 0, chase cam only. Dev keys (F3 stats, fly cam)
  * have no binding; add one when needed.
+ *
+ * The vehicle is driven ONLY by the analog triggers; on foot the stick alone
+ * moves. The throttle/brake axes feed the core's fmaxf(axis, held) reads, so
+ * the analog lever value survives untouched (no threshold jumps).
  */
 #define NUB_RANGE 127.0f
 /* The stick is sensitive; remaining travel is remapped to 0..1 so full
@@ -32,7 +38,6 @@
 
 /* Digital button edges are emitted only on change, like GLFW's key callback. */
 static unsigned int s_prev_buttons;
-static int s_prev_boost;
 static int s_prev_quit;
 
 static void key_event(unsigned int buttons, unsigned int mask, Action action) {
@@ -58,7 +63,6 @@ void input_dc_init(void) {
 
 void backend_input_init(void) {
     s_prev_buttons = 0;
-    s_prev_boost = 0;
     s_prev_quit = 0;
 }
 
@@ -71,19 +75,16 @@ void backend_input_poll(void) {
         return;
 
     unsigned int buttons = st->buttons;
+    GameMode mode = game_mode();
 
-    key_event(buttons, CONT_A, ACT_THROTTLE);
-    key_event(buttons, CONT_B, ACT_BRAKE);
+    /* Mode-independent context actions. A = boost (the L lever is the
+     * vehicle's throttle now). */
+    key_event(buttons, CONT_A, ACT_BOOST);
     key_event(buttons, CONT_Y, ACT_INTERACT);
     key_event(buttons, CONT_X, ACT_VEHICLE);
     key_event(buttons, CONT_START, ACT_PAUSE);
 
-    int boost_now = st->ltrig > 128;
-    if (boost_now != s_prev_boost)
-        input_event_key(ACT_BOOST, boost_now);
-    s_prev_boost = boost_now;
-
-    /* Analog steer with a deadzone; D-pad overrides when the stick is
+    /* Stick X steers in both modes; D-pad overrides when the stick is
      * centred. joyx is a signed byte, -128..127. */
     float steer = stick_axis(st->joyx, STEER_DEADZONE);
     if (steer == 0.0f) {
@@ -94,17 +95,16 @@ void backend_input_poll(void) {
     }
     input_event_axis(AX_STEER, steer);
 
-    /* Stick up/down drives throttle/brake (up = positive). Combine with the
-     * digital A/B so the stick alone moves the car or the walking player. */
-    float fwd = -stick_axis(st->joyy, FWD_DEADZONE);
-    float throttle = (buttons & CONT_A) ? 1.0f : 0.0f;
-    float brake = (buttons & CONT_B) ? 1.0f : 0.0f;
-    if (fwd > throttle)
-        throttle = fwd;
-    if (-fwd > brake)
-        brake = -fwd;
-    input_event_axis(AX_THROTTLE, throttle);
-    input_event_axis(AX_BRAKE, brake);
+    if (mode == GAME_MODE_DRIVE) {
+        /* Vehicle: the L/R levers are the throttle/brake, analog 0..1. */
+        input_event_axis(AX_THROTTLE, (float)st->ltrig / 255.0f);
+        input_event_axis(AX_BRAKE, (float)st->rtrig / 255.0f);
+    } else {
+        /* On foot: the stick alone moves — Y = fwd/back (up = forward). */
+        float fwd = -stick_axis(st->joyy, FWD_DEADZONE);
+        input_event_axis(AX_THROTTLE, (fwd > 0.0f) ? fwd : 0.0f);
+        input_event_axis(AX_BRAKE, (fwd < 0.0f) ? -fwd : 0.0f);
+    }
 
     /* Exit combo: all face buttons + Start. */
     unsigned int combo = CONT_A | CONT_B | CONT_X | CONT_Y | CONT_START;
