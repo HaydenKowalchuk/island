@@ -75,7 +75,10 @@ void render_init(void) {
   static const pvr_init_params_t pvr_params = {
       .opb_sizes =
           {
-              PVR_BINSIZE_32, PVR_BINSIZE_0, PVR_BINSIZE_32, PVR_BINSIZE_0,
+              PVR_BINSIZE_32,
+              PVR_BINSIZE_0,
+              PVR_BINSIZE_32,
+              PVR_BINSIZE_0,
               PVR_BINSIZE_32,
           },
       .vertex_buf_size = 512 * 1024,
@@ -305,13 +308,13 @@ static int dc_emit_tri(const float *m, int screen_space, int fog, float z2d,
  * (island1-m4g4). The recorder says what each draw *is*; this is where that
  * intent becomes a native list.
  *
- * On the PVR the lists render in fixed order (opaque, translucent, punch-through)
- * and the TA sorts within each list, so the recorder's draw order only picks the
- * list — no painter's sorting is needed from us.
+ * On the PVR the lists render in fixed order (opaque, translucent,
+ * punch-through) and the TA sorts within each list, so the recorder's draw
+ * order only picks the list — no painter's sorting is needed from us.
  *
  * OVERLAY has no PVR list of its own, so it shares PT with CUTOUT: PT renders
- * after translucent, which is exactly what "over everything" needs, and it sorts
- * like opaque so the HUD's flat quads keep their submission order.
+ * after translucent, which is exactly what "over everything" needs, and it
+ * sorts like opaque so the HUD's flat quads keep their submission order.
  */
 static pvr_list_t dc_list_of(const RDraw *d) {
   switch (d->composite) {
@@ -327,7 +330,8 @@ static pvr_list_t dc_list_of(const RDraw *d) {
   }
 }
 
-/* Depth for a screen-space draw, which the ortho transform gives no usable z. */
+/* Depth for a screen-space draw, which the ortho transform gives no usable z.
+ */
 static float dc_depth_2d(const RenderFrame *frame, const RDraw *d) {
   /* Overlays ignore scene depth, so pin them at the near plane. */
   if (d->composite == R_COMPOSITE_OVERLAY)
@@ -370,6 +374,10 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
     cxt.blend.dst = PVR_BLEND_INVSRCALPHA;
     cxt.blend.src_enable = PVR_BLEND_ENABLE;
     cxt.blend.dst_enable = PVR_BLEND_ENABLE;
+    /* Translucent effects like wake/spray shouldn't be occluded by coplanar
+     * water; depth test against the opaque buffer fights floating-point z. */
+    cxt.depth.comparison = PVR_DEPTHCMP_ALWAYS;
+    cxt.depth.write = PVR_DEPTHWRITE_DISABLE;
   }
 
   pvr_poly_hdr_t hdr;
@@ -387,7 +395,7 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
     static const float identity[16] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
                                        0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
                                        0.0f, 0.0f, 0.0f, 1.0f};
-    const float* world = d->mesh ? d->world : identity;
+    const float *world = d->mesh ? d->world : identity;
     float pv[16];
     mat_mul(frame->proj, frame->view, pv);
     mat_mul(pv, world, m);
@@ -397,9 +405,9 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
 
   /*
    * Screen-space z, decided by the declared class rather than the pass enum: an
-   * overlay goes closest (1.0) so it wins the depth compare, while a screen-space
-   * scene draw (the sky) sits at the fog end — the farthest non-zero W-buffer
-   * depth (z = 0 is infinity in the ISP's perspective math).
+   * overlay goes closest (1.0) so it wins the depth compare, while a
+   * screen-space scene draw (the sky) sits at the fog end — the farthest
+   * non-zero W-buffer depth (z = 0 is infinity in the ISP's perspective math).
    */
   float z2d = dc_depth_2d(frame, d);
 
@@ -411,11 +419,10 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
     for (int i = 0; i + 2 < mesh->index_count; i += 3) {
       if (written + 8 > DC_SCRATCH_VERTS)
         break; /* overflow guard (island1-41ct) */
-      written += dc_emit_tri(m, screen_space, fog, z2d, d->tint,
-                             &mesh->verts[mesh->indices[i]],
-                             &mesh->verts[mesh->indices[i + 1]],
-                             &mesh->verts[mesh->indices[i + 2]],
-                             &s_scratch[written]);
+      written += dc_emit_tri(
+          m, screen_space, fog, z2d, d->tint, &mesh->verts[mesh->indices[i]],
+          &mesh->verts[mesh->indices[i + 1]],
+          &mesh->verts[mesh->indices[i + 2]], &s_scratch[written]);
     }
   } else if (d->prim == R_TRIANGLES) {
     for (int i = 0; i + 2 < d->count; i += 3) {
@@ -436,26 +443,26 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
                              &q[3], &s_scratch[written]);
     }
   }
-    /* R_LINES: the TA has no line primitive; skipped for now (dev-only
-     * draws). Add thin-quad expansion here if lines ever matter on console. */
+  /* R_LINES: the TA has no line primitive; skipped for now (dev-only
+   * draws). Add thin-quad expansion here if lines ever matter on console. */
 
-    if (written > 0) {
-      int rc = pvr_prim(s_scratch, (unsigned int)written * sizeof(pvr_vertex_t));
-      if (s_dbg_prints > 0 && rc != 0)
-        printf("dc ERR: pvr_prim verts pass=%d = %d\n", (int)d->pass, rc);
-    }
+  if (written > 0) {
+    int rc = pvr_prim(s_scratch, (unsigned int)written * sizeof(pvr_vertex_t));
+    if (s_dbg_prints > 0 && rc != 0)
+      printf("dc ERR: pvr_prim verts pass=%d = %d\n", (int)d->pass, rc);
+  }
 
-    /* Bring-up instrumentation: what the ocean/HUD draws actually became. */
-    if (s_dbg_prints > 0 &&
-        (d->pass == R_PASS_OCEAN || d->pass == R_PASS_HUD) && written > 0) {
-        printf("dc: pass=%d prim=%d comp=%d first=%d cnt=%d ss=%d list=%d w=%d "
-               "v0=(%.1f,%.1f,%.4f) v1=(%.1f,%.1f,%.4f) v2=(%.1f,%.1f,%.4f)\n",
-               (int)d->pass, (int)d->prim, (int)d->composite, d->first, d->count,
-               d->screen_space, (int)list, written, s_scratch[0].x, s_scratch[0].y,
-               s_scratch[0].z, s_scratch[1].x, s_scratch[1].y, s_scratch[1].z,
-               s_scratch[2].x, s_scratch[2].y, s_scratch[2].z);
-        s_dbg_prints--;
-    }
+  /* Bring-up instrumentation: what the ocean/HUD draws actually became. */
+  if (s_dbg_prints > 0 && (d->pass == R_PASS_OCEAN || d->pass == R_PASS_HUD) &&
+      written > 0) {
+    printf("dc: pass=%d prim=%d comp=%d first=%d cnt=%d ss=%d list=%d w=%d "
+           "v0=(%.1f,%.1f,%.4f) v1=(%.1f,%.1f,%.4f) v2=(%.1f,%.1f,%.4f)\n",
+           (int)d->pass, (int)d->prim, (int)d->composite, d->first, d->count,
+           d->screen_space, (int)list, written, s_scratch[0].x, s_scratch[0].y,
+           s_scratch[0].z, s_scratch[1].x, s_scratch[1].y, s_scratch[1].z,
+           s_scratch[2].x, s_scratch[2].y, s_scratch[2].z);
+    s_dbg_prints--;
+  }
 }
 
 static void dc_submit_list(pvr_list_t list, const RenderFrame *frame) {

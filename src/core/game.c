@@ -58,7 +58,7 @@ typedef enum { MODE_DRIVE, MODE_FOOT } PlayerMode;
 
 #define FOOT_SPEED 4.5f
 #define FOOT_TURN 6.0f
-#define FOOT_WADE -0.8f  /* ground below this is too deep to walk */
+#define FOOT_WADE -0.8f /* ground below this is too deep to walk */
 #define VEHICLE_REACH 3.5f
 #define VEHICLE_EXIT_OFFSET 2.6f
 
@@ -77,9 +77,9 @@ static Mesh s_player_mesh;
 
 /*
  * Live sandbox loop: the package waits at the depot on the main island; every
- * request picks a random recipient house on one of the islands, so the run keeps
- * moving. A coloured beacon marks the active objective (cyan = pick up, green =
- * deliver). Full conversation / on-foot handover is island1-38qy.
+ * request picks a random recipient house on one of the islands, so the run
+ * keeps moving. A coloured beacon marks the active objective (cyan = pick up,
+ * green = deliver). Full conversation / on-foot handover is island1-38qy.
  */
 #define DEPOT_X 8.0f
 #define DEPOT_Z 82.0f
@@ -101,10 +101,10 @@ typedef struct {
 } House;
 
 static const float HOUSE_SITES[HOUSE_COUNT][3] = {
-    {-14.0f, 70.0f, 0.0f},   /* main island */
-    {74.0f, 134.0f, 0.0f},   /* east islet */
-    {-66.0f, 126.0f, 0.0f},  /* west islet */
-    {20.0f, -74.0f, 0.0f},   /* southern islet */
+    {-14.0f, 70.0f, 0.0f},  /* main island */
+    {74.0f, 134.0f, 0.0f},  /* east islet */
+    {-66.0f, 126.0f, 0.0f}, /* west islet */
+    {20.0f, -74.0f, 0.0f},  /* southern islet */
 };
 static const float HOUSE_TINT[HOUSE_COUNT][4] = {
     {1.0f, 0.90f, 0.80f, 1.0f},
@@ -160,7 +160,8 @@ static const float *active_pos(void) {
   return (s_mode == MODE_FOOT) ? s_player.pos : s_veh.pos;
 }
 
-/* The active objective: the depot while requesting, else the target resident. */
+/* The active objective: the depot while requesting, else the target resident.
+ */
 static const float *active_target(void) {
   return (s_quest == GAME_QUEST_CARRY) ? s_houses[s_target_house].resident
                                        : s_depot;
@@ -220,7 +221,7 @@ static void quest_tick(float dt) {
  */
 #define TRAIL_MAX 64
 #define TRAIL_STEP 1.1f
-#define WAKE_LIFT 0.14f
+#define WAKE_LIFT 1.2f
 
 static float s_trail[TRAIL_MAX * 2];
 static int s_trail_count = 0;
@@ -305,7 +306,8 @@ static void build_player(void) {
                (const float[]){0.10f, 0.35f, 0.12f}, shirt);
 }
 
-/* Small pack worn on the player's back while carrying on foot (island1-fhno). */
+/* Small pack worn on the player's back while carrying on foot (island1-fhno).
+ */
 static void build_pack(void) {
   const float brown[4] = {0.45f, 0.30f, 0.16f, 1.0f};
 
@@ -463,9 +465,7 @@ int game_quest_carried(void) { return s_quest == GAME_QUEST_CARRY; }
 
 int game_delivered_count(void) { return s_delivered; }
 
-const float *game_npc_pos(void) {
-  return s_houses[s_target_house].resident;
-}
+const float *game_npc_pos(void) { return s_houses[s_target_house].resident; }
 
 const float *game_package_pos(void) { return s_pkg_pos; }
 
@@ -494,13 +494,15 @@ void game_set_hud(int on) { s_hud = on ? 1 : 0; }
 int game_hud_enabled(void) { return s_hud; }
 
 /* Presentation-only lean; the physics lives in car.c (island1-9n0n). */
-#define CAR_BANK_MAX 0.61f /* radians, ~35 deg aggressive lean (island1-9gio) */
+#define CAR_BANK_MAX                                                           \
+  0.61f /* radians, ~35 deg aggressive lean (island1-9gio)                     \
+         */
 #define CAR_BANK_RATE 4.0f
 
 static void drive_car(float dt) {
   /* Analog triggers feed the axes; the digital actions stay as a fallback. */
-  float throttle = fmaxf(input_axis(AX_THROTTLE),
-                         input_held(ACT_THROTTLE) ? 1.0f : 0.0f);
+  float throttle =
+      fmaxf(input_axis(AX_THROTTLE), input_held(ACT_THROTTLE) ? 1.0f : 0.0f);
   float brake =
       fmaxf(input_axis(AX_BRAKE), input_held(ACT_BRAKE) ? 1.0f : 0.0f);
   float steer = input_axis(AX_STEER);
@@ -601,8 +603,8 @@ static void toggle_vehicle(void) {
  * (shallow water can be waded at sea level).
  */
 static void walk_player(float dt) {
-  float throttle = fmaxf(input_axis(AX_THROTTLE),
-                         input_held(ACT_THROTTLE) ? 1.0f : 0.0f);
+  float throttle =
+      fmaxf(input_axis(AX_THROTTLE), input_held(ACT_THROTTLE) ? 1.0f : 0.0f);
   float brake =
       fmaxf(input_axis(AX_BRAKE), input_held(ACT_BRAKE) ? 1.0f : 0.0f);
   float move = throttle - brake;
@@ -694,8 +696,8 @@ static void emit_sky(void) {
   d.first = base;
   d.count = 4;
   d.screen_space = 1;
-  /* Screen-space, but part of the scene rather than an overlay: it must sort and
-   * depth-test like solid geometry so it sits behind the island. */
+  /* Screen-space, but part of the scene rather than an overlay: it must sort
+   * and depth-test like solid geometry so it sits behind the island. */
   d.composite = R_COMPOSITE_OPAQUE;
   d.tint[0] = d.tint[1] = d.tint[2] = d.tint[3] = 1.0f;
   r_draw(&d);
@@ -806,10 +808,8 @@ static void emit_ocean(float t) {
 
   /* view is column-major; eye = -R^T * t. */
   const float *vf = (const float *)view;
-  const float ex =
-      -(vf[0] * vf[12] + vf[1] * vf[13] + vf[2] * vf[14]);
-  const float ez =
-      -(vf[8] * vf[12] + vf[9] * vf[13] + vf[10] * vf[14]);
+  const float ex = -(vf[0] * vf[12] + vf[1] * vf[13] + vf[2] * vf[14]);
+  const float ez = -(vf[8] * vf[12] + vf[9] * vf[13] + vf[10] * vf[14]);
 
   float ax[OCEAN_N], az[OCEAN_N];
   for (int k = 0; k < OCEAN_N; k++) {
@@ -908,7 +908,8 @@ static void emit_car(float t) {
   r_mesh(&s_car, (const float *)world, white);
 }
 
-/* The walking player (island1-zku4/urkr): humanoid mesh on the island surface. */
+/* The walking player (island1-zku4/urkr): humanoid mesh on the island surface.
+ */
 static void emit_player(float t) {
   (void)t;
   r_pass(R_PASS_VEHICLE);
@@ -917,7 +918,8 @@ static void emit_player(float t) {
 
   mat4 world;
   glm_mat4_identity(world);
-  glm_translate(world, (vec3){s_player.pos[0], s_player.pos[1] + bob, s_player.pos[2]});
+  glm_translate(
+      world, (vec3){s_player.pos[0], s_player.pos[1] + bob, s_player.pos[2]});
   glm_rotate(world, s_player.heading, (vec3){0.0f, 1.0f, 0.0f});
 
   r_mesh(&s_player_mesh, (const float *)world, white);
@@ -1128,14 +1130,16 @@ void game_render(float frame_dt) {
     float pdx = s_player.pos[0] - s_veh.pos[0];
     float pdz = s_player.pos[2] - s_veh.pos[2];
     int near_car = pdx * pdx + pdz * pdz <= VEHICLE_REACH * VEHICLE_REACH;
-    float speed_kmh = (s_mode == MODE_FOOT) ? s_player.speed_kmh : s_veh.speed_kmh;
+    float speed_kmh =
+        (s_mode == MODE_FOOT) ? s_player.speed_kmh : s_veh.speed_kmh;
 
     r_pass(R_PASS_HUD);
     snprintf(buf, sizeof(buf), "%d KMH", (int)(speed_kmh + 0.5f));
     r_text_2d(12, 10, 2.0f, s_mode == MODE_FOOT ? "ON FOOT" : "CHASE", white);
     r_text_2d(12, 32, 1.5f, buf, white);
     if (s_mode == MODE_FOOT)
-      r_text_2d(12, 54, 1.0f, near_car ? "F GET IN" : "WASD WALK  F3 STATS", white);
+      r_text_2d(12, 54, 1.0f, near_car ? "F GET IN" : "WASD WALK  F3 STATS",
+                white);
     else
       r_text_2d(12, 54, 1.0f,
                 on_land ? "F GET OUT  F3 STATS" : "DRIVE TO LAND TO DISEMBARK",
@@ -1159,7 +1163,8 @@ void game_render(float frame_dt) {
       if (odist <= QUEST_DELIVER_RANGE)
         r_text_2d(12, 76, 1.0f, "E DELIVER TO RESIDENT", white);
       else {
-        snprintf(buf, sizeof(buf), "HOUSE %d  %.0fm", s_target_house + 1, odist);
+        snprintf(buf, sizeof(buf), "HOUSE %d  %.0fm", s_target_house + 1,
+                 odist);
         r_text_2d(12, 76, 1.0f, buf, white);
       }
     }
