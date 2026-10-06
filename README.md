@@ -83,7 +83,12 @@ unblocked tasks.
 
 - meson compile && (cd src && ./island)
 - PSP (needs pspsdk at `/opt/toolchains/pspdev`):
-  `meson setup build-psp --buildtype=release -Dplatform=psp --cross-file mips-allegrex-psp`
-  then `meson compile -C build-psp`. Produces `build-psp/src/EBOOT.PBP`; assets
+  `meson setup build_psp --buildtype=release -Dplatform=psp --cross-file mips-allegrex-psp`
+  then `meson compile -C build_psp`. Produces `build_psp/src/EBOOT.PBP`; assets
   are copied next to it and the loader also checks `host0:/assets` and
   `ms0:/PSP/GAME/island/assets`.
+- PSP ISO (needs cdrtools, `brew install cdrtools`): `./scripts/build_psp_iso.sh`
+  stages the UMD tree in `.scratch/psp_iso` from the skeleton in `tools/iso_root`
+  and the XMB art in `assets_psp/` (icon0 144x80 + pic1 480x272), then writes
+  `build_psp/island.iso` (BOOT.BIN/EBOOT.BIN from the build, textures under
+  `PSP_GAME/USRDIR/assets`).

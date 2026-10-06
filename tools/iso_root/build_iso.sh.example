@@ -1,0 +1,24 @@
+#!/bin/sh
+# # brew install cdrtools
+# # Define your homebrew ID
+DISC_ID="HOME-90002"
+
+# Generate the file with no trailing newline (-n)
+echo -n "${DISC_ID}|1|1|" > iso_root/UMD_DATA.BIN
+# python instead
+# disc_id = "HOME-00001"
+# output_path = "iso_root/UMD_DATA.BIN"
+
+# # The data must be exactly format: ID|1|1|
+# umd_data_content = f"{disc_id}|1|1|"
+
+# Recursively strip all Apple extended attributes from your assets
+xattr -cr iso_root/
+
+# Delete the hidden macOS folder settings file so mkisofs doesn't touch it
+rm -f iso_root/PSP_GAME/USRDIR/.DS_Store
+
+# with open(output_path, "wb") as f:
+#     f.write(umd_data_content.encode('ascii'))
+#mkisofs -A "PSP GAME" -V "MY_HOMEBREW" -sysid "PSP GAME" -volset "" -p "" -publisher "" -iso-level 3 -d -D -N -l -allow-leading-dots -o my_game.iso iso_root/
+mkisofs -A "PSP GAME" -V "NDC_ISLAND" -sysid "PSP GAME" -volset "" -p "" -publisher "" -U -o island.iso iso_root/
