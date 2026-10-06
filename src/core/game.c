@@ -244,9 +244,13 @@ static void quest_tick(float dt) {
  * world-space points (instead of resampling a fake rope every frame) keeps the
  * ribbon still; the y value is rebuilt each frame from the wave field.
  */
-#define TRAIL_MAX 64
+#define TRAIL_MAX 20 /* 22 units of wake, ~0.8 s at the 28 m/s top speed */
 #define TRAIL_STEP 1.1f
 #define WAKE_LIFT 1.2f
+/* The wake has to start at the stern, not under the hull: the car body spans
+ * z in [-2, +2] in model space and +Z is forward, so recording the car's own
+ * origin laid the ribbon across the front half of the car. */
+#define WAKE_OFFSET (2.2f)
 
 static float s_trail[TRAIL_MAX * 2];
 static int s_trail_count = 0;
@@ -518,9 +522,7 @@ void game_set_hud(int on) { s_hud = on ? 1 : 0; }
 int game_hud_enabled(void) { return s_hud; }
 
 /* Presentation-only lean; the physics lives in car.c (island1-9n0n). */
-#define CAR_BANK_MAX                                                           \
-  0.61f /* radians, ~35 deg aggressive lean (island1-9gio)                     \
-         */
+#define CAR_BANK_MAX 0.78f /* radians, ~45 deg lean (island1-9gio) */
 #define CAR_BANK_RATE 4.0f
 
 static void drive_car(float dt) {
@@ -546,7 +548,13 @@ static void drive_car(float dt) {
   float bank_target = steer * CAR_BANK_MAX * speed01;
   s_bank += (bank_target - s_bank) * (1.0f - expf(-CAR_BANK_RATE * dt));
 
-  trail_push(s_veh.pos);
+  /* Record the stern rather than the car's origin, so the wake trails the hull
+   * instead of starting underneath (or ahead of) it. Forward is (sin h, cos h),
+   * so the stern is one WAKE_OFFSET behind. */
+  float wake[3] = {s_veh.pos[0] - sinf(s_veh.heading) * WAKE_OFFSET,
+                   s_veh.pos[1],
+                   s_veh.pos[2] - cosf(s_veh.heading) * WAKE_OFFSET};
+  trail_push(wake);
 
   if (input_pressed(ACT_DEV_RESET)) {
     car_init(&s_veh, 0.0f, 0.0f, 0.0f);
