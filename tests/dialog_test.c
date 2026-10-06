@@ -78,6 +78,32 @@ int main(void) {
   dialog_draw();
   CHECK(r_frame()->stat_verts > 0, "dialog_draw records the box");
 
+  /* 6. Stack-local line arrays are safe: dialog_start() must copy the pointers,
+   *    not keep the caller's array address (a dangling s_lines read stale
+   *    stack and crashed strlen in the game). */
+  dialog_close();
+  r_frame_begin();
+  {
+    /* Open from a nested frame that dies before the box is touched. */
+    const char* stack_lines[2] = { "STACK LINE A", "STACK LINE B" };
+    dialog_start("STACKER", stack_lines, 2);
+  }
+  {
+    /* Scrub the stack region the dead frame occupied. */
+    volatile char scrub[512];
+    memset((void*)scrub, 0x5A, sizeof(scrub));
+    (void)scrub;
+  }
+  dialog_update(1.0f, 0);
+  CHECK(dialog_active() && dialog_line_complete(),
+        "line 0 survives the caller's frame dying");
+  dialog_update(0.0f, 1); /* advance to line 1 */
+  dialog_update(1.0f, 0);
+  CHECK(dialog_active() && dialog_line_complete(),
+        "line 1 survives the caller's frame dying");
+  dialog_update(0.0f, 1); /* close */
+  CHECK(!dialog_active(), "stack-started conversation closes normally");
+
   if (failures) {
     printf("%d dialog test failure(s)\n", failures);
     return 1;

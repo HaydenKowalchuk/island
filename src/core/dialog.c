@@ -22,8 +22,13 @@
 
 /* ---- Conversation state ------------------------------------------------- */
 
-static const char* s_name = NULL;
-static const char* const* s_lines = NULL;
+static const char *s_name = NULL;
+/* Line pointers are COPIED on dialog_start(): callers routinely pass a
+ * stack-local array of pointers, so storing the array address would dangle
+ * into a dead frame the moment the caller returns. The strings themselves
+ * must still outlive the conversation (static tables are the intended use). */
+static const char *s_line_ptrs[DIALOG_MAX_LINES];
+static const char *const *s_lines = NULL;
 static int s_line_count = 0;
 static int s_line = 0;
 static float s_char_time = 0.0f;
@@ -37,13 +42,15 @@ static int dialog_visible_chars(void) {
   return (vis < len) ? vis : len;
 }
 
-void dialog_start(const char* name, const char* const* lines, int line_count) {
+void dialog_start(const char *name, const char *const *lines, int line_count) {
   if (!lines || line_count <= 0)
     return;
   if (line_count > DIALOG_MAX_LINES)
     line_count = DIALOG_MAX_LINES;
   s_name = name;
-  s_lines = lines;
+  for (int i = 0; i < line_count; i++)
+    s_line_ptrs[i] = lines[i];
+  s_lines = s_line_ptrs;
   s_line_count = line_count;
   s_line = 0;
   s_char_time = 0.0f;
@@ -86,7 +93,7 @@ void dialog_update(float dt, int advance_pressed) {
 
 /* ---- Textbox geometry ---------------------------------------------------- */
 
-static void dialog_box(int vw, int vh, int* x, int* y, int* w, int* h) {
+static void dialog_box(int vw, int vh, int *x, int *y, int *w, int *h) {
   *w = (int)((float)vw * DIALOG_BOX_W_FRAC);
   *h = (int)((float)vh * DIALOG_BOX_H_FRAC);
   *x = (vw - *w) / 2;
@@ -107,8 +114,8 @@ static void rect_px(int vw, int vh, int x, int y, int w, int h,
  * row so character indices stay identical to the original string; the reveal
  * count indexes into `line` seamlessly across rows.
  */
-static int wrap_line(const char* line, int max_chars, int max_rows,
-                     int* row_starts, int* row_lens) {
+static int wrap_line(const char *line, int max_chars, int max_rows,
+                     int *row_starts, int *row_lens) {
   int len = (int)strlen(line);
   int rows = 0, i = 0;
 
@@ -137,11 +144,11 @@ static int wrap_line(const char* line, int max_chars, int max_rows,
   return rows;
 }
 
-void hud_dialog_draw(const char* name, const char* line, float type_progress) {
+void hud_dialog_draw(const char *name, const char *line, float type_progress) {
   r_pass(R_PASS_HUD); /* the box is definitionally HUD; also survives callers
                          that forgot to set the pass */
 
-  const RenderFrame* fr = r_frame();
+  const RenderFrame *fr = r_frame();
   int vw = fr->width, vh = fr->height;
   if (vw <= 0 || vh <= 0 || !line)
     return;
@@ -176,10 +183,10 @@ void hud_dialog_draw(const char* name, const char* line, float type_progress) {
     return;
 
   int row_starts[DIALOG_MAX_LINES], row_lens[DIALOG_MAX_LINES];
-  int rows = wrap_line(line, max_chars,
-                       (max_rows < DIALOG_MAX_LINES) ? max_rows
-                                                     : DIALOG_MAX_LINES,
-                       row_starts, row_lens);
+  int rows =
+      wrap_line(line, max_chars,
+                (max_rows < DIALOG_MAX_LINES) ? max_rows : DIALOG_MAX_LINES,
+                row_starts, row_lens);
 
   int vis = (int)type_progress;
   if (vis < 0)
@@ -196,8 +203,8 @@ void hud_dialog_draw(const char* name, const char* line, float type_progress) {
       shown = DIALOG_MAX_CHARS; /* row buffer bound, see comment on the macro */
     memcpy(buf, line + row_starts[r], (size_t)shown);
     buf[shown] = '\0';
-    r_text_2d(text_x, text_y + r * (int)DIALOG_ROW_STEP, DIALOG_TEXT_SCALE,
-              buf, white);
+    r_text_2d(text_x, text_y + r * (int)DIALOG_ROW_STEP, DIALOG_TEXT_SCALE, buf,
+              white);
   }
 }
 
@@ -214,7 +221,7 @@ void dialog_draw(void) {
   if (phase & 1)
     return;
 
-  const RenderFrame* fr = r_frame();
+  const RenderFrame *fr = r_frame();
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
   int bx, by, bw, bh;
   dialog_box(fr->width, fr->height, &bx, &by, &bw, &bh);
