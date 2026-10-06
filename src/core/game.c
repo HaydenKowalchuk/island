@@ -90,7 +90,7 @@ static Mesh s_player_mesh;
 #define QUEST_DONE_TIME 1.4f
 #define TOAST_TIME 1.8f
 #define CAR_START_X 0.0f
-#define CAR_START_Z 58.0f
+#define CAR_START_Z 0.0f
 #define HOUSE_COUNT 4
 #define NPC_LOOK_RANGE 30.0f
 

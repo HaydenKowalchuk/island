@@ -40,15 +40,59 @@ Decisions taken while implementing, in priority order:
 - Lighting stays baked (vertex colours); `GU_LIGHTING` is never enabled.
 - Fog **is** hardware: `sceGuFog(fog_start, fog_end, sky)` + `GU_FOG`. This
   supersedes the "CPU vertex-colour fog" note in island1-gi02's description.
-- World-space recorded triangles are **near-clipped on the CPU**: a triangle
-  straddling the eye projects past the GE's guard band and the hardware drops it
-  whole instead of clipping it. Clip space is GL's, so the plane is `z + w >= 0`
-  (the eye sits at `z + w = 0`, *not* at `z = 0`). The clipped vertices are then
-  mapped back through `(proj*view)^-1` to object space, because the draw is still
-  submitted with `GU_TRANSFORM_3D` under the real proj/view — identity matrices
-  would work geometrically but would break hardware fog, which is derived from
-  view space. Fully-inside triangles and screen-space draws (orthographic, `w =
-  1`) skip the transform entirely.
+- World-space triangles (recorded **and** mesh draws) are **software-clipped
+  on the CPU against six planes**: the GE's T&L has no real clipper, so with
+  clip planes disabled it **discards a whole primitive** when *any* vertex
+  trips one of
+  - `W <= 0` (behind the eye);
+  - screen Z outside `[0, 65536)` — the viewport maps `z/w = -1` to 65535 and
+    `z/w = +1` to 0, so `z + w < 0` (nearer than near) or `z - w < 0` (past
+    far) kills the triangle;
+  - screen X/Y outside the `0..4096` guard band — `X_vp = x/w*240 + 2048`,
+    so the band is `|x/w| <= 8.533`, `|y/w| <= 15.059`; a big near-camera
+    ocean tile sprawls past it and vanished *entirely* (island1-1s8d).
+
+  Clip planes (all conservative w.r.t. those limits):
+
+  | plane | inside |
+  |---|---|
+  | near | `z + w >= PSP_CLIP_EPS` |
+  | far | `w - z >= PSP_CLIP_EPS` |
+  | left / right | `x + GX*w >= 0` / `GX*w - x >= 0` |
+  | bottom / top | `y + GY*w >= 0` / `GY*w - y >= 0` |
+
+  `PSP_CLIP_EPS = 0.1` (~10x the GE's float24 round-off, ~0.01 absolute at
+  scene coordinates: the hardware re-evaluates the plane in 24-bit float, so
+  float32 vertices a hair inside can still land outside and trip the discard
+  — this is why shrinking an earlier `1e-4` epsilon changed nothing);
+  `GX = 8`, `GY = 14` sit inside the guard-band limits for the same reason.
+
+  Sutherland-Hodgman runs in **object space**: plane distances come from a
+  per-vertex `mvp` evaluation and only positions/colours/uvs are lerped (the
+  GE applies its own matrices to the result, which also preserves hardware
+  fog derived from view space — there is no `(proj*view)^-1` round trip).
+  Distances are affine, so later planes reuse the lerped values. A clipped
+  polygon keeps its source triangle's winding (strip-order decomposition in
+  `emit_poly_tris`).
+
+  Each source triangle's **clip code** (OR of its vertices' plane bits)
+  tints the emitted polygon (`clip_code_tint`: odd multipliers mod 256,
+  floored bright) so clipped triangles show on screen by which planes they
+  crossed; code 0 keeps the normal colour. Emission is staged into
+  `sceGuGetMemory` chunks (`CLIP_STAGE` verts) — never stack memory, since
+  the GE reads display-list RAM later (cache coherency, see below).
+
+  Mesh draws pre-check every vertex against all six planes and keep the
+  indexed submission when fully inside; anything straddling expands through
+  the same clip path as the recorded draws (like `render_dc.c` runs
+  everything through `dc_emit_tri`). Fully-inside triangles and
+  screen-space draws (orthographic, `w = 1`, `clip_mvp = NULL`) skip the
+  transform entirely. When a *recorded* draw straddles, quads degrade from
+  the triangle strip to a plain triangle list (a strip cannot survive
+  polygons changing shape); the all-inside strip order is
+  `(q1,q2,q0,q3)` per quad, which reproduces the source tris
+  `(q0,q1,q2)`/`(q0,q2,q3)` under GL strip parity (even `i,i+1,i+2`, odd
+  `i+1,i,i+2`) with degenerate-joined quads anchored on even indices.
 - Screen-space HUD/sky uses the GE's `GU_TRANSFORM_3D` with a `[0,1]` ortho,
   matching GL's bottom-left origin. Depth test is keyed off the draw's declared
   `RComposite` class (island1-m4g4), not off `screen_space`: an
