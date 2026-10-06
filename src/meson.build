@@ -12,6 +12,7 @@ core_sources = files(
   'core/car.c',
   'core/chase_cam.c',
   'core/dialog.c',
+  'core/frustum.c',
   'core/game.c',
   'core/input.c',
   'core/mesh.c',
@@ -293,3 +294,25 @@ dialog_test = executable(
   install: false,
 )
 test('dialog', dialog_test)
+
+# GL-free test for the shared frustum helpers: extraction must reject on all
+# six planes, and the quad test must be strictly tighter than the AABB test
+# (island1-762c).
+frustum_test = executable(
+  'frustum-test',
+  files('../tests/frustum_test.c', 'core/frustum.c'),
+  include_directories: [core_inc],
+  dependencies: [cglm_dep, math_dep],
+  install: false,
+)
+test('frustum', frustum_test)
+
+# GL-free test for terrain's per-island frustum + fog culling (island1-762c).
+terrain_cull_test = executable(
+  'terrain-cull-test',
+  files('../tests/terrain_cull_test.c') + core_sources,
+  include_directories: [core_inc],
+  dependencies: [cglm_dep, math_dep],
+  install: false,
+)
+test('terrain-cull', terrain_cull_test)

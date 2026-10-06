@@ -180,17 +180,19 @@ Consequences:
 ## Audit — what exists (2026-10-03)
 
 - **View frustum: yes.** Gribb-Hartmann extraction of the six planes from
-  proj*view (src/core/game.c:298) plus a conservative AABB test
-  (src/core/game.c:313), used by ocean cells. Limitations: locked in game.c,
-  ocean-only — reusable module + Mesh bounds tracked as island1-mc2v.
+  proj*view lives in the shared module (src/core/frustum.c) with conservative
+  AABB, sphere and quad-hull tests. Users: ocean cells (cheap AABB pre-test,
+  then the tighter quad test on the four real wave corners) and terrain
+  (per-island AABB + fog-horizon distance, src/core/terrain.c). Other passes
+  still unculled — Mesh bounds tracked as island1-mc2v.
 - **Clipping: yes (desktop).** Per-primitive clipping to the view volume is
   spec-guaranteed in fixed-function GL (all six frustum planes plus the near
   plane) — no manual clipping is needed. Current geometry is near-plane safe:
   ocean cells are 10-unit quads, sky/HUD are screen-space, wake/billboards
   are small. Console backends cannot rely on HW clipping this way
   (render-dc.md).
-- **Culling**: backface via GL_CULL_FACE (GL_CCW wound, GL_BACK); frustum
-  culling at draw level (ocean only).
+- **Culling**: backface via GL_CULL_FACE (GL_CCW wound, GL_BACK); CPU frustum
+  culling at draw level (ocean cells + whole terrain islands, fog horizon too).
 - **Fog**: linear, colour = sky horizon (seamless), per-draw on/off,
   start/end from `r_fog()`. Only GL_LINEAR is reachable (island1-pqhi).
 - Depth test (GL_LEQUAL), blend, 2D textures (NEAREST, no mips), per-draw
@@ -205,11 +207,11 @@ Consequences:
 | --- | --- | --- |
 | Alpha test | cutout textures (canopies, fences, stippled spray); cheaper than blend and needs no transparent sorting; native on PSP (GU_ALPHA_TEST) and DC (punch-through list) | island1-qb9x |
 | Dead lit plumbing | RVertex has no normals; `r_mesh` forces lit=0; `setup_lights()` configures lights nothing can enable; decision: remove | island1-agob |
-| Frustum not reusable, no Mesh bounds | locked in game.c for ocean only; car/parcel/props never culled; island content needs O(1) per-mesh culling | island1-mc2v |
+| Frustum module done, no Mesh bounds | terrain + ocean culled (island1-762c); car/parcel/props still never culled — needs bounds on Mesh for O(1) per-mesh tests | island1-mc2v |
 | Scissor | minimap/splitscreen/HUD panels (island1-n7to); native on PSP, emulated on DC | island1-4t0s |
 | tex_env pinned to MODULATE | REPLACE (HUD icons) / ADD (additive glow) unreachable; DC has no GL_ADD equivalent — backend maps it | island1-01nc |
 | Fog mode not in frame | only linear reachable; PSP GE is linear-only, DC can do exp via fog tables — document or add mode+density | island1-pqhi |
-| Frame caps | 16384 verts / 512 draws; ocean alone is 6400 verts unculled; revisit when island content lands | island1-41ct |
+| Frame caps | 16384 verts / 512 draws; ocean grid is 6400 verts if fully visible (frustum+fog culling keeps the recorded run short); revisit when island content lands | island1-41ct |
 
 ## Not to be added
 

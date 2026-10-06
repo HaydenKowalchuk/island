@@ -25,7 +25,16 @@ float terrain_height_at(float x, float z);
 /* Unit surface normal at a world position (central differences). */
 void terrain_normal_at(float x, float z, vec3 out);
 
-/* Records the island meshes as the terrain pass of the current frame. */
-void terrain_emit(void);
+/*
+ * Records the visible island meshes as the terrain pass of the current frame.
+ * Each island is tested against all six view-frustum planes and against the
+ * fog horizon (`eye` is the camera position); fully hidden islands are not
+ * recorded at all, which is what keeps the PSP's GE from vertex-processing
+ * geometry that would only be clipped (island1-762c).
+ */
+void terrain_emit(const float eye[3]);
+
+/* Islands recorded by the last terrain_emit out of the total (F3 overlay). */
+void terrain_stats(int* drawn, int* total);
 
 #endif

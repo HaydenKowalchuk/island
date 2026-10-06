@@ -171,7 +171,8 @@ deliberately, not copied from samples.
 2. **Vertex budget** — CPU frustum culling before recording matters most here
    (island1-mc2v): the GE still vertex-processes submitted polys even when
    they end up clipped, so culling before recording is the only culling that
-   saves real work.
+   saves real work. Terrain (per-island AABB + fog) and ocean cells (AABB then
+   quad-hull) already skip on CPU via src/core/frustum.c (island1-762c).
 3. **One texture stage** — multitexture must never be used (the API is
    already compliant).
 4. **Texture size 512 max**, swizzle on upload; NEAREST filter per the art
@@ -200,7 +201,8 @@ deliberately, not copied from samples.
 - The 512 draws/frame cap (island1-41ct) is generous; each draw becomes VTYPE
   + state changes + vertices, so consecutive same-state draws are cheap if
   the backend coalesces.
-- Frustum culling (island1-mc2v) + the fog horizon keep the vertex count low.
+- CPU frustum culling (island1-mc2v/762c) + the fog horizon keep the vertex
+  count low.
 
 ## Fog
 

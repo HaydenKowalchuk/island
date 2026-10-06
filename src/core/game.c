@@ -10,6 +10,7 @@
 #include "car.h"
 #include "chase_cam.h"
 #include "dialog.h"
+#include "frustum.h"
 #include "input.h"
 #include "lod.h"
 #include "mesh.h"
@@ -771,59 +772,8 @@ static float ocean_axis(int k) {
   return OCEAN_R * (OCEAN_SKEW * u + (1.0f - OCEAN_SKEW) * u * u * u);
 }
 
-/* ---- Frustum culling -------------------------------------------------- */
-
-typedef struct {
-  float a, b, c, d;
-} Plane;
-
-static void frustum_plane(const float row3[4], const float row[4], float sign,
-                          Plane *p) {
-  p->a = row3[0] + sign * row[0];
-  p->b = row3[1] + sign * row[1];
-  p->c = row3[2] + sign * row[2];
-  p->d = row3[3] + sign * row[3];
-
-  float len = sqrtf(p->a * p->a + p->b * p->b + p->c * p->c);
-  if (len > 1e-6f) {
-    p->a /= len;
-    p->b /= len;
-    p->c /= len;
-    p->d /= len;
-  }
-}
-
-/*
- * Extract the six clip-space planes from clip = proj * view (Gribb-Hartmann).
- * cglm matrices are column-major, so matrix row r is (m[r], m[4+r], ...).
- */
-static void extract_frustum(const float *clip, Plane planes[6]) {
-  const float row0[4] = {clip[0], clip[4], clip[8], clip[12]};
-  const float row1[4] = {clip[1], clip[5], clip[9], clip[13]};
-  const float row2[4] = {clip[2], clip[6], clip[10], clip[14]};
-  const float row3[4] = {clip[3], clip[7], clip[11], clip[15]};
-
-  frustum_plane(row3, row0, +1.0f, &planes[0]); /* left   */
-  frustum_plane(row3, row0, -1.0f, &planes[1]); /* right  */
-  frustum_plane(row3, row1, +1.0f, &planes[2]); /* bottom */
-  frustum_plane(row3, row1, -1.0f, &planes[3]); /* top    */
-  frustum_plane(row3, row2, +1.0f, &planes[4]); /* near   */
-  frustum_plane(row3, row2, -1.0f, &planes[5]); /* far    */
-}
-
-/* Conservative AABB test: reject only when the box is fully outside a plane. */
-static int aabb_in_frustum(const Plane planes[6], float x0, float y0, float z0,
-                           float x1, float y1, float z1) {
-  for (int i = 0; i < 6; i++) {
-    const Plane *p = &planes[i];
-    float px = (p->a >= 0.0f) ? x1 : x0;
-    float py = (p->b >= 0.0f) ? y1 : y0;
-    float pz = (p->c >= 0.0f) ? z1 : z0;
-    if (p->a * px + p->b * py + p->c * pz + p->d < 0.0f)
-      return 0;
-  }
-  return 1;
-}
+/* Frustum tests live in frustum.{h,c} so terrain and the ocean grid share one
+ * extraction and one set of plane tests (island1-762c / island1-mc2v). */
 
 /*
  * One batched draw of a camera-centred, distance-graded water grid. Cells near
@@ -840,7 +790,7 @@ static void emit_ocean(float t) {
   memcpy(proj, r_frame()->proj, sizeof(proj));
   memcpy(view, r_frame()->view, sizeof(view));
   glm_mat4_mul(proj, view, clip);
-  extract_frustum((const float *)clip, planes);
+  frustum_extract((const float *)clip, planes);
 
   /* view is column-major; eye = -R^T * t. */
   const float *vf = (const float *)view;
@@ -881,14 +831,21 @@ static void emit_ocean(float t) {
       if (cdx * cdx + cdz * cdz > FOG_END * FOG_END)
         continue;
 
+      /* Cheap reject before the wave math: the whole wave range sits inside a
+       * two-unit-tall box, so this can never drop a visible cell — it just
+       * keeps the side/behind cells out of the four sin/cos evals. */
+      if (!frustum_aabb_visible(planes, x0, -1.0f, z0, x1, 1.0f, z1))
+        continue;
+
       float y00 = wave_height(x0, z0, t);
       float y10 = wave_height(x1, z0, t);
       float y11 = wave_height(x1, z1, t);
       float y01 = wave_height(x0, z1, t);
 
-      float ymin = fminf(fminf(y00, y10), fminf(y11, y01));
-      float ymax = fmaxf(fmaxf(y00, y10), fmaxf(y11, y01));
-      if (!aabb_in_frustum(planes, x0, ymin, z0, x1, ymax, z1))
+      /* Tight test on the cell's four real corners: the quad hull is inside
+       * its own AABB, so this rejects more rim cells at the side planes than
+       * the box test would, without ever popping a cell that is on screen. */
+      if (!frustum_quad_visible(planes, x0, z0, x1, z1, y00, y01, y11, y10))
         continue;
       s_ocean_drawn++;
 
@@ -1146,7 +1103,7 @@ void game_render(float frame_dt) {
 
   emit_sky();
   emit_ocean(s_time);
-  terrain_emit();
+  terrain_emit(s_cam_pos);
   emit_wake(s_time);
   emit_depot(s_time);
   emit_houses(s_time);
@@ -1246,6 +1203,12 @@ void game_render(float frame_dt) {
 
     snprintf(buf, sizeof(buf), "OCEAN %d/%d CELLS", s_ocean_drawn,
              s_ocean_total);
+    r_text_2d(x, y, 1.0f, buf, white);
+    y += 12;
+
+    int t_drawn = 0, t_total = 0;
+    terrain_stats(&t_drawn, &t_total);
+    snprintf(buf, sizeof(buf), "TERRAIN %d/%d", t_drawn, t_total);
     r_text_2d(x, y, 1.0f, buf, white);
   }
 
