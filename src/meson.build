@@ -11,6 +11,7 @@ core_sources = files(
   'core/camera.c',
   'core/car.c',
   'core/chase_cam.c',
+  'core/dialog.c',
   'core/game.c',
   'core/input.c',
   'core/mesh.c',
@@ -282,3 +283,13 @@ car_test = executable(
   install: false,
 )
 test('car', car_test)
+
+# GL-free behaviour test for the conversation textbox typewriter (island1-a2xf).
+dialog_test = executable(
+  'dialog-test',
+  files('../tests/dialog_test.c', 'core/dialog.c', 'core/render.c'),
+  include_directories: [core_inc],
+  dependencies: [math_dep],
+  install: false,
+)
+test('dialog', dialog_test)

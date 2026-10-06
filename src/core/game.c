@@ -9,6 +9,7 @@
 #include "camera.h"
 #include "car.h"
 #include "chase_cam.h"
+#include "dialog.h"
 #include "input.h"
 #include "lod.h"
 #include "mesh.h"
@@ -167,6 +168,13 @@ static const float *active_target(void) {
                                        : s_depot;
 }
 
+/*
+ * Conversation lines for the pickup/delivery beats. The resident names and the
+ * data-driven tables arrive with the NPC conversation system (island1-9fm3);
+ * these static buffers outlive dialog_start(), which only stores pointers.
+ */
+static char s_dialog_lines[DIALOG_MAX_LINES][DIALOG_MAX_CHARS];
+
 static void quest_tick(float dt) {
   const float *ap = active_pos();
 
@@ -174,18 +182,34 @@ static void quest_tick(float dt) {
     float dx = ap[0] - s_depot[0];
     float dz = ap[2] - s_depot[2];
     if (dx * dx + dz * dz <= QUEST_PICKUP_RANGE * QUEST_PICKUP_RANGE &&
-        input_pressed(ACT_INTERACT))
+        !dialog_active() && input_pressed(ACT_INTERACT)) {
       s_quest = GAME_QUEST_CARRY;
+      /* Hand-off chatter (island1-a2xf textbox; wording is 9fm3's to replace). */
+      snprintf(s_dialog_lines[0], sizeof(s_dialog_lines[0]),
+               "PACKAGE FOR HOUSE %d. HEAVY ONE.", s_target_house + 1);
+      snprintf(s_dialog_lines[1], sizeof(s_dialog_lines[1]),
+               "DELIVER IT TO THE RESIDENT, THEN HURRY BACK.");
+      const char *lines[DIALOG_MAX_LINES] = {s_dialog_lines[0],
+                                             s_dialog_lines[1]};
+      dialog_start("DEPOT KEEPER", lines, 2);
+    }
   } else if (s_quest == GAME_QUEST_CARRY) {
     const float *rp = s_houses[s_target_house].resident;
     float dx = ap[0] - rp[0];
     float dz = ap[2] - rp[2];
     if (dx * dx + dz * dz <= QUEST_DELIVER_RANGE * QUEST_DELIVER_RANGE &&
-        input_pressed(ACT_INTERACT)) {
+        !dialog_active() && input_pressed(ACT_INTERACT)) {
       s_quest = GAME_QUEST_DONE;
       s_quest_timer = QUEST_DONE_TIME;
       s_toast_timer = TOAST_TIME;
       s_delivered++;
+      snprintf(s_dialog_lines[0], sizeof(s_dialog_lines[0]),
+               "MY PACKAGE! FINALLY!");
+      snprintf(s_dialog_lines[1], sizeof(s_dialog_lines[1]),
+               "THE ISLAND THANKS YOU, COURIER.");
+      const char *lines[DIALOG_MAX_LINES] = {s_dialog_lines[0],
+                                             s_dialog_lines[1]};
+      dialog_start("RESIDENT", lines, 2);
     }
   } else { /* GAME_QUEST_DONE */
     s_quest_timer -= dt;
@@ -675,6 +699,10 @@ void game_tick(float dt) {
   }
 
   quest_tick(dt);
+
+  /* Conversation typewriter + E advance/skip (island1-a2xf). Runs after the
+   * quest logic so the press that opened a box is consumed, not reused. */
+  dialog_update(dt, input_pressed(ACT_INTERACT));
 }
 
 /* ---- Frame recording -------------------------------------------------- */
@@ -1212,4 +1240,9 @@ void game_render(float frame_dt) {
              s_ocean_total);
     r_text_2d(x, y, 1.0f, buf, white);
   }
+
+  /* Conversation textbox, last so it sits over every other HUD element
+   * (island1-a2xf). It owns the bottom third; the beacon is world-space and
+   * the readouts live above the box, so nothing is covered. */
+  dialog_draw();
 }

@@ -1,0 +1,87 @@
+/*
+ * GL-free behaviour test for the conversation textbox (island1-a2xf).
+ *
+ * Checks the acceptance criteria without a window:
+ *   - hud_dialog_draw records screen-space OVERLAY draws (box + border + text)
+ *   - typewriter reveals at 1 char / 30 ms
+ *   - the first E completes a partial line instantly, the next E advances,
+ *     and the E after the last line closes the box
+ *   - the E press that opened the conversation is consumed (no instant skip)
+ */
+#include <stdio.h>
+#include <string.h>
+
+#include "dialog.h"
+#include "render.h"
+
+static int failures = 0;
+
+#define CHECK(cond, msg)                                                       \
+  do {                                                                         \
+    if (!(cond)) {                                                             \
+      printf("FAIL: %s\n", msg);                                               \
+      failures++;                                                              \
+    }                                                                          \
+  } while (0)
+
+int main(void) {
+  /* 1. The draw primitive records into the HUD/overlay pipeline. */
+  r_frame_begin();
+  r_viewport(320, 180);
+  hud_dialog_draw("MAYOR", "WELCOME TO THE ISLAND.", 3.0f);
+  hud_dialog_draw(NULL, "WELCOME TO THE ISLAND.", 8.0f); /* anonymous speaker */
+  const RenderFrame* fr = r_frame();
+  CHECK(fr->draw_count > 0, "dialog records draws");
+  CHECK(fr->pass_draws[R_PASS_HUD] == fr->draw_count, "dialog draws land in the HUD pass");
+  CHECK(fr->stat_verts > 0, "dialog records vertices");
+
+  /* 2. Typewriter timing: 30 ms per character. */
+  static const char* const lines[] = { "HEY", "BYE" };
+  r_frame_begin(); /* reset the recorder between sections */
+  dialog_start("TESTER", lines, 2);
+  CHECK(dialog_active(), "conversation opens");
+  CHECK(!dialog_line_complete(), "fresh line is not complete");
+
+  dialog_update(0.031f, 0); /* ~one char period */
+  CHECK(!dialog_line_complete(), "3-char line incomplete after one period");
+
+  dialog_update(0.100f, 0); /* past the end of a 3-char line */
+  CHECK(dialog_line_complete(), "line completes after full reveal time");
+
+  /* 3. E rule: first E completes, second E advances, last E closes. */
+  r_frame_begin();
+  dialog_start("TESTER", lines, 2);
+  dialog_update(0.031f, 0); /* consume the opening frame, reveal one char */
+  dialog_update(0.0f, 1);   /* partial line + E -> complete, stay on line 0 */
+  CHECK(dialog_active() && dialog_line_complete(),
+        "E completes a partial line without advancing");
+
+  dialog_update(0.0f, 1); /* complete line + E -> advance to line 1 */
+  CHECK(dialog_active() && !dialog_line_complete(),
+        "E advances to the next (fresh) line");
+
+  dialog_update(0.0f, 1); /* partial line + E -> complete again */
+  CHECK(dialog_line_complete(), "second line completes on E too");
+
+  dialog_update(0.0f, 1); /* complete last line + E -> close */
+  CHECK(!dialog_active(), "E on the last line closes the box");
+
+  /* 4. The opening press is consumed. */
+  r_frame_begin();
+  dialog_start("TESTER", lines, 2);
+  dialog_update(0.0f, 1); /* same-frame E must not skip or advance */
+  CHECK(dialog_active() && !dialog_line_complete(),
+        "opening E press is consumed");
+
+  /* 5. Draw path with an active conversation records text. */
+  dialog_update(1.0f, 0);
+  dialog_draw();
+  CHECK(r_frame()->stat_verts > 0, "dialog_draw records the box");
+
+  if (failures) {
+    printf("%d dialog test failure(s)\n", failures);
+    return 1;
+  }
+  printf("dialog: all checks passed\n");
+  return 0;
+}
