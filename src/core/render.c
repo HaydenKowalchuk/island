@@ -267,10 +267,10 @@ void r_ribbon(const float *pts, int n, float width, const float color[4]) {
   RDraw draw = {0};
   draw.prim = R_QUADS;
   draw.first = first;
-draw.count = count;
-    draw.composite = R_COMPOSITE_TRANSLUCENT;
-    draw.fog = 0;
-    draw.blend = 1;
+  draw.count = count;
+  draw.composite = R_COMPOSITE_TRANSLUCENT;
+  draw.fog = 0;
+  draw.blend = 1;
   draw.depth_write = 0;
   draw.cull = R_CULL_NONE;
   draw.tint[0] = draw.tint[1] = draw.tint[2] = draw.tint[3] = 1.0f;

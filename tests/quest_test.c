@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <stdio.h>
 
+#include "dialog.h"
 #include "game.h"
 #include "input.h"
 
@@ -12,6 +13,14 @@ static void tap_interact(void) {
     input_event_key(ACT_INTERACT, false);
     input_begin_frame();
     game_tick(1.0f / 60.0f);
+}
+
+/* Advance the conversation textbox with E until it closes (island1-a2xf). */
+static void dismiss_dialog(void) {
+    int guard = 0;
+    while (dialog_active() && guard++ < 32)
+        tap_interact();
+    assert(!dialog_active());
 }
 
 int main(void) {
@@ -31,11 +40,22 @@ int main(void) {
 
     int first_house = game_target_house();
 
-    /* Collect the package at the depot. */
+    /* Collect the package at the depot (opens the depot keeper's box). */
     game_place_vehicle(depot[0], depot[2], 0.0f);
     tap_interact();
     assert(game_quest_carried());
     assert(game_quest_phase() == GAME_QUEST_CARRY);
+    assert(dialog_active());
+
+    /* The box holds the delivery E until dismissed, like a player would. */
+    assert(dialog_active());
+
+    /* Render while the box is open — the exact path that crashed strlen via
+     * a dangling s_lines (island1-a2xf). Must record the textbox, not fault. */
+    game_render(1.0f / 60.0f);
+    assert(game_quest_carried());
+
+    dismiss_dialog();
 
     /* The beacon now marks the target resident. */
     const float* npc = game_npc_pos();

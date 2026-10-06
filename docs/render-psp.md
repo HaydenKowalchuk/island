@@ -40,6 +40,15 @@ Decisions taken while implementing, in priority order:
 - Lighting stays baked (vertex colours); `GU_LIGHTING` is never enabled.
 - Fog **is** hardware: `sceGuFog(fog_start, fog_end, sky)` + `GU_FOG`. This
   supersedes the "CPU vertex-colour fog" note in island1-gi02's description.
+- World-space recorded triangles are **near-clipped on the CPU**: a triangle
+  straddling the eye projects past the GE's guard band and the hardware drops it
+  whole instead of clipping it. Clip space is GL's, so the plane is `z + w >= 0`
+  (the eye sits at `z + w = 0`, *not* at `z = 0`). The clipped vertices are then
+  mapped back through `(proj*view)^-1` to object space, because the draw is still
+  submitted with `GU_TRANSFORM_3D` under the real proj/view — identity matrices
+  would work geometrically but would break hardware fog, which is derived from
+  view space. Fully-inside triangles and screen-space draws (orthographic, `w =
+  1`) skip the transform entirely.
 - Screen-space HUD/sky uses the GE's `GU_TRANSFORM_3D` with a `[0,1]` ortho,
   matching GL's bottom-left origin. Depth test is keyed off the draw's declared
   `RComposite` class (island1-m4g4), not off `screen_space`: an

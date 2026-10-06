@@ -184,7 +184,8 @@ static void quest_tick(float dt) {
     if (dx * dx + dz * dz <= QUEST_PICKUP_RANGE * QUEST_PICKUP_RANGE &&
         !dialog_active() && input_pressed(ACT_INTERACT)) {
       s_quest = GAME_QUEST_CARRY;
-      /* Hand-off chatter (island1-a2xf textbox; wording is 9fm3's to replace). */
+      /* Hand-off chatter (island1-a2xf textbox; wording is 9fm3's to replace).
+       */
       snprintf(s_dialog_lines[0], sizeof(s_dialog_lines[0]),
                "PACKAGE FOR HOUSE %d. HEAVY ONE.", s_target_house + 1);
       snprintf(s_dialog_lines[1], sizeof(s_dialog_lines[1]),
@@ -278,7 +279,7 @@ static CamMode s_cam_mode = CAM_CHASE;
 static int s_hud = 1;
 
 /* Dev overlay (F3) and ocean cull counters shown in it. */
-static int s_debug = 1;
+static int s_debug = 0;
 static int s_ocean_drawn = 0;
 static int s_ocean_total = 0;
 
@@ -401,7 +402,6 @@ static void apply_cam_framing(void);
 void game_init(void) {
   cam_init(&s_cam);
   s_time = 0.0f;
-  s_debug = 1;
   s_rng = 0x1234567u;
   s_delivered = 0;
   s_target_house = -1;

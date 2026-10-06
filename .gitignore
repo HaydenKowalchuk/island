@@ -16,3 +16,4 @@ dist/
 .DS_Store
 .scratch/
 assets/textures/
+.zed/

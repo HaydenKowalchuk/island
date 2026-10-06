@@ -52,6 +52,64 @@ static ScePspFMatrix4 s_proj;
 static ScePspFMatrix4 s_view;
 static ScePspFMatrix4 s_model;
 
+/*
+ * Near-plane clipping. The GE drops a whole triangle that straddles the eye
+ * (it projects past the guard band instead of being clipped), so world-space
+ * triangles are clipped on the CPU before submission.
+ *
+ * Clip-space convention is GL's: a perspective projection puts the eye plane at
+ * z + w = 0, so "inside" is z + w >= 0. Testing z alone would throw away the
+ * entire near half of the frustum (z/w in [-1,0)).
+ */
+#define PSP_CLIP_EPS 1e-4f
+
+typedef struct {
+    float x, y, z, w; /* clip space while clipping, object space otherwise */
+    float r, g, b, a; /* tint-applied vertex colour, packed on emit */
+} ClipVert;
+
+/* Column-major (GL/cglm) 4x4 times a vector. */
+static inline void mat4_mul_vec4(const ScePspFMatrix4* m, float x, float y,
+                                float z, float w, float* ox, float* oy,
+                                float* oz, float* ow) {
+    const float* a = (const float*)m;
+    *ox = a[0] * x + a[4] * y + a[8] * z + a[12] * w;
+    *oy = a[1] * x + a[5] * y + a[9] * z + a[13] * w;
+    *oz = a[2] * x + a[6] * y + a[10] * z + a[14] * w;
+    *ow = a[3] * x + a[7] * y + a[11] * z + a[15] * w;
+}
+
+static inline void clip_vert_lerp(const ClipVert* a, const ClipVert* b, float t,
+                                 ClipVert* out) {
+    out->x = a->x + (b->x - a->x) * t;
+    out->y = a->y + (b->y - a->y) * t;
+    out->z = a->z + (b->z - a->z) * t;
+    out->w = a->w + (b->w - a->w) * t;
+    out->r = a->r + (b->r - a->r) * t;
+    out->g = a->g + (b->g - a->g) * t;
+    out->b = a->b + (b->b - a->b) * t;
+    out->a = a->a + (b->a - a->a) * t;
+}
+
+/* Sutherland-Hodgman against the near plane. One plane turns a triangle into at
+ * most four vertices, so out[] never needs more room than that. */
+static int clip_tri_near(const ClipVert in[3], ClipVert out[6]) {
+    int n = 0;
+    for (int i = 0; i < 3; i++) {
+        const ClipVert* p = &in[i];
+        const ClipVert* q = &in[(i + 1) % 3];
+        float dp = p->z + p->w;
+        float dq = q->z + q->w;
+        int pin = dp >= -PSP_CLIP_EPS;
+        int qin = dq >= -PSP_CLIP_EPS;
+        if (pin)
+            out[n++] = *p;
+        if (pin != qin)
+            clip_vert_lerp(p, q, dp / (dp - dq), &out[n++]);
+    }
+    return n;
+}
+
 /* -1 means "unknown" so the first draw installs every piece of GE state. */
 static int s_mode = -1; /* 0 = world, 1 = screen-space */
 static int s_tex_on = -1;
@@ -78,8 +136,16 @@ static unsigned int pack_rgba(const float c[4]) {
     return (a << 24) | (b << 16) | (g << 8) | r;
 }
 
+static void shade4(const RVertex* v, const float tint[4], float out[4]) {
+    out[0] = v->r * tint[0];
+    out[1] = v->g * tint[1];
+    out[2] = v->b * tint[2];
+    out[3] = v->a * tint[3];
+}
+
 static unsigned int shade(const RVertex* v, const float tint[4]) {
-    float c[4] = { v->r * tint[0], v->g * tint[1], v->b * tint[2], v->a * tint[3] };
+    float c[4];
+    shade4(v, tint, c);
     return pack_rgba(c);
 }
 
@@ -143,6 +209,63 @@ static void set_cull(int on) {
     s_cull = on;
 }
 
+/* out = a * b, column-major. out must not alias a or b. */
+static void mat4_mul4(const ScePspFMatrix4* a, const ScePspFMatrix4* b,
+                     ScePspFMatrix4* out) {
+    const float* A = (const float*)a;
+    const float* B = (const float*)b;
+    float o[16];
+    for (int c = 0; c < 4; c++) {
+        for (int r = 0; r < 4; r++) {
+            o[c * 4 + r] = A[r] * B[c * 4] + A[4 + r] * B[c * 4 + 1] +
+                           A[8 + r] * B[c * 4 + 2] + A[12 + r] * B[c * 4 + 3];
+        }
+    }
+    memcpy(out, o, sizeof(o));
+}
+
+/* out = m^-1, column-major. Returns 0 if m is singular. */
+static int mat4_inv(const ScePspFMatrix4* m, ScePspFMatrix4* out) {
+    const float* a = (const float*)m;
+    float b00 = a[0] * a[5] - a[4] * a[1];
+    float b01 = a[0] * a[6] - a[4] * a[2];
+    float b02 = a[0] * a[7] - a[4] * a[3];
+    float b03 = a[1] * a[6] - a[5] * a[2];
+    float b04 = a[1] * a[7] - a[5] * a[3];
+    float b05 = a[2] * a[7] - a[6] * a[3];
+    float b06 = a[8] * a[13] - a[12] * a[9];
+    float b07 = a[8] * a[14] - a[12] * a[10];
+    float b08 = a[8] * a[15] - a[12] * a[11];
+    float b09 = a[9] * a[14] - a[13] * a[10];
+    float b10 = a[9] * a[15] - a[13] * a[11];
+    float b11 = a[10] * a[15] - a[14] * a[11];
+    float det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 +
+                b05 * b06;
+    if (det == 0.0f)
+        return 0;
+    det = 1.0f / det;
+
+    float o[16];
+    o[0] = (a[5] * b11 - a[6] * b10 + a[7] * b09) * det;
+    o[1] = (a[2] * b10 - a[1] * b11 - a[3] * b09) * det;
+    o[2] = (a[13] * b05 - a[14] * b04 + a[15] * b03) * det;
+    o[3] = (a[10] * b04 - a[9] * b05 - a[11] * b03) * det;
+    o[4] = (a[6] * b08 - a[4] * b11 - a[7] * b07) * det;
+    o[5] = (a[0] * b11 - a[2] * b08 + a[3] * b07) * det;
+    o[6] = (a[14] * b02 - a[12] * b05 - a[15] * b01) * det;
+    o[7] = (a[8] * b05 - a[10] * b02 + a[11] * b01) * det;
+    o[8] = (a[4] * b10 - a[5] * b08 + a[7] * b06) * det;
+    o[9] = (a[1] * b08 - a[0] * b10 - a[3] * b06) * det;
+    o[10] = (a[12] * b04 - a[13] * b02 + a[15] * b00) * det;
+    o[11] = (a[9] * b02 - a[8] * b04 - a[11] * b00) * det;
+    o[12] = (a[5] * b07 - a[4] * b09 - a[6] * b06) * det;
+    o[13] = (a[0] * b09 - a[1] * b07 + a[2] * b06) * det;
+    o[14] = (a[13] * b01 - a[12] * b03 - a[14] * b00) * det;
+    o[15] = (a[8] * b03 - a[9] * b01 + a[10] * b00) * det;
+    memcpy(out, o, sizeof(o));
+    return 1;
+}
+
 static void use_world(const RenderFrame* f) {
     if (s_mode == 0)
         return;
@@ -180,6 +303,83 @@ static void apply_state(const RenderFrame* f, const RDraw* d, int textured, int 
     set_tex(textured);
 }
 
+static void clip_vert_from(const RVertex* s, const float tint[4], ClipVert* out) {
+    float c[4];
+    shade4(s, tint, c);
+    out->x = s->x;
+    out->y = s->y;
+    out->z = s->z;
+    out->w = 1.0f;
+    out->r = c[0];
+    out->g = c[1];
+    out->b = c[2];
+    out->a = c[3];
+}
+
+static void emit_v(const ClipVert* v, GuVtx* out, int* n) {
+    float c[4] = { v->r, v->g, v->b, v->a };
+    out[*n].color = pack_rgba(c);
+    out[*n].x = v->x;
+    out[*n].y = v->y;
+    out[*n].z = v->z;
+    (*n)++;
+}
+
+/*
+ * Near-clip one triangle and append the resulting fan to out. mvp/minv are NULL
+ * for draws that need no clipping (screen space is orthographic with w = 1, so
+ * it never crosses the plane).
+ *
+ * Clipped vertices go back through minv before being written: the GE still
+ * applies proj * view, and M^-1 lands the clipped clip-space vertex on the
+ * object-space point that transforms into it. Keeping the GE's own matrices is
+ * what preserves hardware fog, which is derived from view space.
+ */
+static void emit_tri(const ClipVert obj[3], const ScePspFMatrix4* mvp,
+                     const ScePspFMatrix4* minv, GuVtx* out, int* n) {
+    ClipVert tmp[6];
+    tmp[0] = obj[0];
+    tmp[1] = obj[1];
+    tmp[2] = obj[2];
+    int cn = 3;
+
+    if (mvp) {
+        ClipVert clp[3];
+        int clipped = 0;
+        for (int i = 0; i < 3; i++) {
+            mat4_mul_vec4(mvp, obj[i].x, obj[i].y, obj[i].z, obj[i].w,
+                          &clp[i].x, &clp[i].y, &clp[i].z, &clp[i].w);
+            clp[i].r = obj[i].r;
+            clp[i].g = obj[i].g;
+            clp[i].b = obj[i].b;
+            clp[i].a = obj[i].a;
+            if (clp[i].z + clp[i].w < -PSP_CLIP_EPS)
+                clipped = 1;
+        }
+        if (clipped) {
+            cn = clip_tri_near(clp, tmp);
+            if (cn < 3)
+                return;
+            for (int i = 0; i < cn; i++) {
+                float x, y, z, w;
+                mat4_mul_vec4(minv, tmp[i].x, tmp[i].y, tmp[i].z, tmp[i].w,
+                              &x, &y, &z, &w);
+                if (w == 0.0f)
+                    return;
+                tmp[i].x = x / w;
+                tmp[i].y = y / w;
+                tmp[i].z = z / w;
+            }
+        }
+    }
+
+    for (int t = 1; t + 1 < cn; t++) {
+        emit_v(&tmp[0], out, n);
+        emit_v(&tmp[t], out, n);
+        emit_v(&tmp[t + 1], out, n);
+    }
+}
+
 static void present_recorded(const RenderFrame* f, const RDraw* d, int screen) {
     const RVertex* v = &f->verts[d->first];
     const float* tint = d->tint;
@@ -192,6 +392,8 @@ static void present_recorded(const RenderFrame* f, const RDraw* d, int screen) {
     sceGuSetMatrix(GU_MODEL, &s_identity);
 
     if (d->prim == R_LINES) {
+        /* Lines still copy through: only a triangle that straddles the eye
+         * blows past the guard band (see emit_tri). */
         GuVtx* out = (GuVtx*)sceGuGetMemory((unsigned int)count * sizeof(GuVtx));
         for (int i = 0; i < count; i++) {
             out[i].color = shade(&v[i], tint);
@@ -204,38 +406,43 @@ static void present_recorded(const RenderFrame* f, const RDraw* d, int screen) {
         return;
     }
 
-    /* R_QUADS -> 2 triangles each; R_TRIANGLES passes through. */
-    int out_count = (d->prim == R_QUADS) ? (count / 4) * 6 : count;
-    if (out_count <= 0)
-        return;
-
-    GuVtx* out = (GuVtx*)sceGuGetMemory((unsigned int)out_count * sizeof(GuVtx));
-    int n = 0;
-
-    if (d->prim == R_QUADS) {
-        static const int order[6] = { 0, 1, 2, 0, 2, 3 };
-        for (int q = 0; q + 3 < count; q += 4) {
-            for (int k = 0; k < 6; k++) {
-                const RVertex* s = &v[q + order[k]];
-                out[n].color = shade(s, tint);
-                out[n].x = s->x;
-                out[n].y = s->y;
-                out[n].z = s->z;
-                n++;
-            }
-        }
-    } else {
-        for (int i = 0; i < count; i++) {
-            out[n].color = shade(&v[i], tint);
-            out[n].x = v[i].x;
-            out[n].y = v[i].y;
-            out[n].z = v[i].z;
-            n++;
+    ScePspFMatrix4 mvp, minv;
+    const ScePspFMatrix4* clip_mvp = NULL;
+    const ScePspFMatrix4* clip_minv = NULL;
+    if (!screen) {
+        mat4_mul4(&s_proj, &s_view, &mvp);
+        if (mat4_inv(&mvp, &minv)) {
+            clip_mvp = &mvp;
+            clip_minv = &minv;
         }
     }
 
-    sceGuDrawArray(GU_TRIANGLES, GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D,
-                   n, NULL, out);
+    static const int quad_idx[6] = { 0, 1, 2, 0, 2, 3 };
+    static const int tri_idx[3] = { 0, 1, 2 };
+    int step = (d->prim == R_QUADS) ? 4 : 3;
+    const int* order = (step == 4) ? quad_idx : tri_idx;
+    int ntri = (count / step) * (step / 2);
+    if (ntri <= 0)
+        return;
+
+    /* A near-clipped triangle fans out to at most six vertices. */
+    int cap = ntri * (clip_mvp ? 6 : 3);
+    GuVtx* out = (GuVtx*)sceGuGetMemory((unsigned int)cap * sizeof(GuVtx));
+    int n = 0;
+
+    for (int q = 0; q + step <= count; q += step) {
+        for (int k = 0; k < step / 2; k++) {
+            ClipVert tri[3];
+            for (int t = 0; t < 3; t++)
+                clip_vert_from(&v[q + order[k * 3 + t]], tint, &tri[t]);
+            emit_tri(tri, clip_mvp, clip_minv, out, &n);
+        }
+    }
+
+    if (n > 0) {
+        sceGuDrawArray(GU_TRIANGLES, GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D,
+                       n, NULL, out);
+    }
 }
 
 static void present_mesh(const RenderFrame* f, const RDraw* d) {
@@ -291,6 +498,18 @@ static void present_mesh(const RenderFrame* f, const RDraw* d) {
     }
 }
 
+/* GE state is not assumed to survive a finish/start cycle: re-install it. */
+static void reset_ge_state(void) {
+    s_mode = -1;
+    s_tex_on = -1;
+    s_cur_tex = -1;
+    s_fog = -1;
+    s_blend = -1;
+    s_dtest = -1;
+    s_dwrite = -1;
+    s_cull = -1;
+}
+
 void render_init(void) {
     sceGuInit();
 
@@ -331,14 +550,7 @@ void render_init(void) {
     sceGumOrtho(0.0f, 1.0f, 0.0f, 1.0f, -1.0f, 1.0f);
     sceGumStoreMatrix(&s_proj_unit);
 
-    s_mode = -1;
-    s_tex_on = -1;
-    s_cur_tex = -1;
-    s_fog = -1;
-    s_blend = -1;
-    s_dtest = -1;
-    s_dwrite = -1;
-    s_cull = -1;
+    reset_ge_state();
 
     texture_gu_init();
 }
@@ -353,15 +565,7 @@ void render_present(int fb_w, int fb_h) {
     (void)fb_w;
     (void)fb_h;
 
-    /* Do not assume GE state survives a finish/start cycle: re-install it. */
-    s_mode = -1;
-    s_tex_on = -1;
-    s_cur_tex = -1;
-    s_fog = -1;
-    s_blend = -1;
-    s_dtest = -1;
-    s_dwrite = -1;
-    s_cull = -1;
+    reset_ge_state();
 
     sceGuStart(GU_DIRECT, s_list);
 
