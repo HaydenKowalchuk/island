@@ -446,7 +446,7 @@ static int clip_obj_tri(const ClipVert obj[3], const ScePspFMatrix4 *mvp,
     memcpy(da[i], d[i], sizeof(d[i]));
   }
   ClipVert *src = va, *dst = vb;
-  float(*srcd)[6] = da, (*dstd)[6] = db;
+  float (*srcd)[6] = da, (*dstd)[6] = db;
   int n = 3;
   for (int p = 0; p < 6 && n >= 3; p++) {
     if (!(code & (1 << p)))
@@ -455,7 +455,7 @@ static int clip_obj_tri(const ClipVert obj[3], const ScePspFMatrix4 *mvp,
     ClipVert *tv = src;
     src = dst;
     dst = tv;
-    float(*td)[6] = srcd;
+    float (*td)[6] = srcd;
     srcd = dstd;
     dstd = td;
     n = m;
@@ -474,7 +474,7 @@ static int clip_obj_tri(const ClipVert obj[3], const ScePspFMatrix4 *mvp,
  * the polygon's winding with no shared hub vertex.
  */
 static int poly_strip_order(const ClipVert *p, int n,
-                           ClipVert s[CLIP_MAX_POLY]) {
+                            ClipVert s[CLIP_MAX_POLY]) {
   int ns = 0;
   s[ns++] = p[0];
   s[ns++] = p[1];
@@ -633,7 +633,7 @@ static void present_recorded(const RenderFrame *f, const RDraw *d, int screen) {
         clip_vert_from(&v[q + order[k * 3 + t]], tint, &tri[t]);
       int cn = clip_obj_tri(tri, clip_mvp, poly, &code);
       if (cn >= 3) {
-        clip_code_tint(code, poly, cn);
+        // clip_code_tint(code, poly, cn);
         if (n + (cn - 2) * 3 > capn) {
           if (n > 0)
             sceGuDrawArray(GU_TRIANGLES,
@@ -756,7 +756,7 @@ static void present_mesh(const RenderFrame *f, const RDraw *d) {
         clip_vert_from(&m->verts[m->indices[i * 3 + t]], d->tint, &tri[t]);
       int cn = clip_obj_tri(tri, clip_mvp, poly, &code);
       if (cn >= 3) {
-        clip_code_tint(code, poly, cn);
+        // clip_code_tint(code, poly, cn);
         if (n + (cn - 2) * 3 > capn) {
           if (n > 0)
             sceGuDrawArray(GU_TRIANGLES,
@@ -786,7 +786,7 @@ static void present_mesh(const RenderFrame *f, const RDraw *d) {
         clip_vert_from(&m->verts[m->indices[i * 3 + t]], d->tint, &tri[t]);
       int cn = clip_obj_tri(tri, clip_mvp, poly, &code);
       if (cn >= 3) {
-        clip_code_tint(code, poly, cn);
+        // clip_code_tint(code, poly, cn);
         if (n + (cn - 2) * 3 > capn) {
           if (n > 0)
             sceGuDrawArray(GU_TRIANGLES,
