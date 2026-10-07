@@ -10,15 +10,14 @@
  *   Triangle car     Start pause       Home quit      nub steer / pan
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
 #include <unistd.h>
 
 #include <pspdisplay.h>
 #include <pspgu.h>
-#include <pspinit.h>
 #include <pspkernel.h>
 
 #include "game.h"
@@ -44,13 +43,41 @@ static float now_seconds(void) {
   return (float)((double)sceKernelGetSystemTimeWide() / 1000000.0);
 }
 
-/*
- * The init APIs (sceKernelBootFrom / sceKernelInitApitype /
- * sceKernelInitFileName) hand back error codes (0x8xxxxxxx) as their values
- * when they are unavailable — e.g. under a debugger loader — and
- * sceKernelInitFileName's "string" then points into kernel space, which a
- * user thread cannot read (AdEL). Only deref pointers inside user RAM.
- */
+/* How we were launched, inferred from argv[0]/cwd. The kernel launch-info */
+enum boot_kind {
+  BOOT_UNKNOWN,  /* no recognisable device prefix */
+  BOOT_HOST,     /* host0: — debugger host fs (dev tree) */
+  BOOT_DISC,     /* disc0:/umd0: — UMD or ISO game boot */
+  BOOT_MEMSTICK, /* ms0:/ef0: — EBOOT.PBP from the stick */
+};
+
+static enum boot_kind kind_of(const char *dev) {
+  if (!dev)
+    return BOOT_UNKNOWN;
+  if (!strcmp(dev, "host0:"))
+    return BOOT_HOST;
+  if (!strcmp(dev, "disc0:") || !strcmp(dev, "umd0:"))
+    return BOOT_DISC;
+  if (!strncmp(dev, "ms", 2) || !strcmp(dev, "ef0:"))
+    return BOOT_MEMSTICK;
+  return BOOT_UNKNOWN;
+}
+
+static const char *kind_name(enum boot_kind k) {
+  switch (k) {
+  case BOOT_HOST:
+    return "host (dev tree)";
+  case BOOT_DISC:
+    return "disc (umd/iso)";
+  case BOOT_MEMSTICK:
+    return "memstick (pbp)";
+  default:
+    return "unknown";
+  }
+}
+
+/* argv strings live in user RAM; reject NULL, kernel pointers and error
+ * codes masquerading as pointers before dereferencing. */
 static int user_str(const char *p) {
   uintptr_t v = (uintptr_t)p;
   return p && v >= 0x08000000u && v < 0x0C000000u;
@@ -112,13 +139,13 @@ static const char *exe_kind(const char *p) {
 }
 
 /*
- * Boot-source diagnostics: argv, cwd, and the kernel's launch info, so
- * memstick vs disc image (vs host) and the executable flavour (EBOOT.BIN /
- * BOOT.BIN / EBOOT.PBP / prx) are visible. Printed to stdout (emulator log)
- * and mirrored to ms0:/island_boot.txt (ef0: fallback) because real
- * hardware has no console when running from a disc image.
+ * Boot-source diagnostics: argv, cwd and the boot enum (host vs disc/iso vs
+ * memstick), plus the executable flavour (EBOOT.BIN / BOOT.BIN / EBOOT.PBP /
+ * prx). Printed to stdout (emulator/debugger log) and mirrored to
+ * host0:/ms0:/ef0:/island_boot.txt because real hardware has no console
+ * when running from a disc image.
  */
-static void boot_report(int argc, char **argv) {
+static enum boot_kind boot_report(int argc, char **argv) {
   char buf[1024];
   char cwd[256];
   int n = 0;
@@ -133,38 +160,36 @@ static void boot_report(int argc, char **argv) {
   if (!getcwd(cwd, sizeof(cwd)))
     snprintf(cwd, sizeof(cwd), "(getcwd failed)");
 
-  int boot = sceKernelBootFrom();
-  const char *boot_n = (unsigned)boot > 0xffffu  ? "err"
-                       : boot == PSP_BOOT_DISC    ? "disc"
-                       : boot == PSP_BOOT_MS      ? "ms"
-                       : boot == PSP_BOOT_FLASH   ? "flash"
-                                                  : "?";
-  int api = sceKernelInitApitype();
-  const char *api_n = (unsigned)api > 0xffffu ? "err"
-                      : (api & ~0xf) == 0x120 ? "disc"
-                      : (api & ~0xf) == 0x140 ? "ms"
-                      : (api & ~0xf) == 0x210 ? "vsh"
-                                              : "?";
-
-  const char *initfn_raw = sceKernelInitFileName();
-  const char *initfn = user_str(initfn_raw) ? initfn_raw : NULL;
   const char *argv0 = (argc > 0 && argv && argv[0]) ? argv[0] : NULL;
-  const char *src = path_dev(initfn)  ? path_dev(initfn)
-                    : path_dev(argv0) ? path_dev(argv0)
-                    : path_dev(cwd)   ? path_dev(cwd)
-                                      : "(unknown)";
+  const char *src_dev = path_dev(argv0) ? path_dev(argv0) : path_dev(cwd);
+  enum boot_kind kind = kind_of(src_dev);
 
   ADD("[boot] argc=%d\n", argc);
   for (int i = 0; i < argc && i < 8; i++)
     ADD("[boot] argv[%d]=%s\n", i,
         user_str(argv[i]) ? argv[i] : "(unreadable)");
   ADD("[boot] cwd=%s\n", cwd);
-  ADD("[boot] bootFrom=0x%x (%s)\n", boot, boot_n);
-  ADD("[boot] initApitype=0x%x (%s)\n", api, api_n);
-  ADD("[boot] initFileName=%s\n", initfn ? initfn : "(unusable)");
+  ADD("[boot] kind=%s\n", kind_name(kind));
   ADD("[boot] argv[0] flavour=%s\n", exe_kind(argv0));
-  ADD("[boot] init flavour=%s\n", exe_kind(initfn));
-  ADD("[boot] running from device=%s\n", src);
+  ADD("[boot] running from device=%s\n", src_dev ? src_dev : "(unknown)");
+
+  /* A disc boot starts in SYSDIR next to EBOOT.BIN; assets live in USRDIR.
+   * Chdir here so the result lands in the report file too (hardware has no
+   * console), then probe the relative texture root from where we ended up. */
+  if (kind == BOOT_DISC) {
+    ADD("[boot] chdir disc0:/PSP_GAME/USRDIR %s\n",
+        chdir("disc0:/PSP_GAME/USRDIR") == 0 ? "ok" : "failed");
+    memset(cwd, 0, sizeof(cwd));
+    if (getcwd(cwd, sizeof(cwd)))
+      ADD("[boot] cwd now=%s\n", cwd);
+  }
+  FILE *probe = fopen("assets/textures/parcel_32.png", "rb");
+  if (probe) {
+    fclose(probe);
+    ADD("[boot] probe relative assets=ok\n");
+  } else {
+    ADD("[boot] probe relative assets=missing\n");
+  }
 
   printf("%s", buf);
 
@@ -186,6 +211,7 @@ static void boot_report(int argc, char **argv) {
   if (!wrote)
     printf("[boot] (nowhere to write island_boot.txt)\n");
 #undef ADD
+  return kind;
 }
 
 int main(int argc, char **argv) {

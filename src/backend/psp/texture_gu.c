@@ -34,112 +34,110 @@
 #define MAX_TEXTURES 64
 
 typedef struct {
-    unsigned int* pixels;
-    int w, h, tbw;
-    unsigned int psm;
+  unsigned int *pixels;
+  int w, h, tbw;
+  unsigned int psm;
 } GuTexture;
 
 static GuTexture s_tex[MAX_TEXTURES];
 static int s_tex_count = 0;
 
-static int is_pow2(int v) {
-    return v > 0 && (v & (v - 1)) == 0;
+static int is_pow2(int v) { return v > 0 && (v & (v - 1)) == 0; }
+
+static int try_load(const char *path, int *w, int *h, unsigned char **out) {
+  int comp = 0;
+  unsigned char *data = stbi_load(path, w, h, &comp, 4);
+  if (!data)
+    return 0;
+  *out = data;
+  return 1;
 }
 
-static int try_load(const char* path, int* w, int* h, unsigned char** out) {
-    int comp = 0;
-    unsigned char* data = stbi_load(path, w, h, &comp, 4);
-    if (!data)
-        return 0;
-    *out = data;
-    return 1;
-}
+static TextureId load_texture(const char *name) {
+  char path[512];
+  int w = 0, h = 0;
+  unsigned char *data = NULL;
 
-static TextureId load_texture(const char* name) {
-    char path[512];
-    int w = 0, h = 0;
-    unsigned char* data = NULL;
+  const char *env = getenv("ASSET_DIR");
+  if (env && *env) {
+    snprintf(path, sizeof(path), "%s/%s", env, name);
+    try_load(path, &w, &h, &data);
+  }
+  if (!data) {
+    static const char *roots[] = {
+        "host0:/assets",
+        "disc0:/PSP_GAME/USRDIR/assets",
+        "ms0:/PSP/GAME/island/assets",
+        "assets",
+    };
+    for (unsigned i = 0; i < sizeof(roots) / sizeof(roots[0]) && !data; i++) {
+      snprintf(path, sizeof(path), "%s/%s", roots[i], name);
+      try_load(path, &w, &h, &data);
+    }
+  }
+  if (!data) {
+    printf("texture: cannot load %s\n", name);
+    return 0;
+  }
 
-    const char* env = getenv("ASSET_DIR");
-    if (env && *env) {
-        snprintf(path, sizeof(path), "%s/%s", env, name);
-        try_load(path, &w, &h, &data);
-    }
-    if (!data) {
-        static const char* roots[] = {
-            "host0:/assets",
-            "ms0:/PSP/GAME/island/assets",
-            "assets",
-        };
-        for (unsigned i = 0; i < sizeof(roots) / sizeof(roots[0]) && !data; i++) {
-            snprintf(path, sizeof(path), "%s/%s", roots[i], name);
-            try_load(path, &w, &h, &data);
-        }
-    }
-    if (!data) {
-        printf("texture: cannot load %s\n", name);
-        return 0;
-    }
-
-    if (!is_pow2(w) || !is_pow2(h)) {
-        printf("texture: %s is %dx%d (GE needs power-of-two)\n", name, w, h);
-        stbi_image_free(data);
-        return 0;
-    }
-
-    int count = w * h;
-    unsigned int* pixels = (unsigned int*)memalign(16, (size_t)count * 4);
-    if (!pixels) {
-        stbi_image_free(data);
-        return 0;
-    }
-
-    /* stb gives R,G,B,A bytes; the GE wants an ABGR word (little-endian R G B A). */
-    for (int i = 0; i < count; i++) {
-        unsigned char r = data[i * 4 + 0];
-        unsigned char g = data[i * 4 + 1];
-        unsigned char b = data[i * 4 + 2];
-        unsigned char a = data[i * 4 + 3];
-        pixels[i] = ((unsigned int)a << 24) | ((unsigned int)b << 16) |
-                    ((unsigned int)g << 8) | (unsigned int)r;
-    }
+  if (!is_pow2(w) || !is_pow2(h)) {
+    printf("texture: %s is %dx%d (GE needs power-of-two)\n", name, w, h);
     stbi_image_free(data);
+    return 0;
+  }
 
-    /* GE reads through its own cache path: make sure the pixels are visible. */
-    sceKernelDcacheWritebackRange(pixels, (unsigned int)(count * 4));
+  int count = w * h;
+  unsigned int *pixels = (unsigned int *)memalign(16, (size_t)count * 4);
+  if (!pixels) {
+    stbi_image_free(data);
+    return 0;
+  }
 
-    if (s_tex_count >= MAX_TEXTURES)
-        return 0;
+  /* stb gives R,G,B,A bytes; the GE wants an ABGR word (little-endian R G B A).
+   */
+  for (int i = 0; i < count; i++) {
+    unsigned char r = data[i * 4 + 0];
+    unsigned char g = data[i * 4 + 1];
+    unsigned char b = data[i * 4 + 2];
+    unsigned char a = data[i * 4 + 3];
+    pixels[i] = ((unsigned int)a << 24) | ((unsigned int)b << 16) |
+                ((unsigned int)g << 8) | (unsigned int)r;
+  }
+  stbi_image_free(data);
 
-    int idx = s_tex_count++;
-    s_tex[idx].pixels = pixels;
-    s_tex[idx].w = w;
-    s_tex[idx].h = h;
-    s_tex[idx].tbw = w; /* buffer width in pixels; == w for pow2 */
-    s_tex[idx].psm = GU_PSM_8888;
-    return (TextureId)(idx + 1);
+  /* GE reads through its own cache path: make sure the pixels are visible. */
+  sceKernelDcacheWritebackRange(pixels, (unsigned int)(count * 4));
+
+  if (s_tex_count >= MAX_TEXTURES)
+    return 0;
+
+  int idx = s_tex_count++;
+  s_tex[idx].pixels = pixels;
+  s_tex[idx].w = w;
+  s_tex[idx].h = h;
+  s_tex[idx].tbw = w; /* buffer width in pixels; == w for pow2 */
+  s_tex[idx].psm = GU_PSM_8888;
+  return (TextureId)(idx + 1);
 }
 
 void texture_gu_apply(TextureId id) {
-    int idx = id - 1;
-    if (idx < 0 || idx >= s_tex_count)
-        return;
+  int idx = id - 1;
+  if (idx < 0 || idx >= s_tex_count)
+    return;
 
-    GuTexture* t = &s_tex[idx];
-    sceGuTexMode(t->psm, 0, 0, 0);
-    sceGuTexImage(0, t->w, t->h, t->tbw, t->pixels);
-    sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
-    sceGuTexFilter(GU_NEAREST, GU_NEAREST);
-    sceGuTexWrap(GU_REPEAT, GU_REPEAT);
-    sceGuTexFlush();
+  GuTexture *t = &s_tex[idx];
+  sceGuTexMode(t->psm, 0, 0, 0);
+  sceGuTexImage(0, t->w, t->h, t->tbw, t->pixels);
+  sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
+  sceGuTexFilter(GU_NEAREST, GU_NEAREST);
+  sceGuTexWrap(GU_REPEAT, GU_REPEAT);
+  sceGuTexFlush();
 }
 
-void texture_gu_init(void) {
-    texture_set_loader(load_texture);
-}
+void texture_gu_init(void) { texture_set_loader(load_texture); }
 
 void texture_gu_shutdown(void) {
-    for (int i = 0; i < s_tex_count; i++)
-        free(s_tex[i].pixels);
-    s_tex_count = 0;
+  for (int i = 0; i < s_tex_count; i++)
+    free(s_tex[i].pixels);
+  s_tex_count = 0;
 }
