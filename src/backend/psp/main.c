@@ -11,15 +11,18 @@
  */
 
 #include <stdint.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include <pspdisplay.h>
+#include <pspiofilemgr.h>
 #include <pspgu.h>
 #include <pspkernel.h>
 
+#include "boot_kind.h"
 #include "game.h"
 #include "input.h"
 #include "render_gu.h"
@@ -43,13 +46,12 @@ static float now_seconds(void) {
   return (float)((double)sceKernelGetSystemTimeWide() / 1000000.0);
 }
 
-/* How we were launched, inferred from argv[0]/cwd. The kernel launch-info */
-enum boot_kind {
-  BOOT_UNKNOWN,  /* no recognisable device prefix */
-  BOOT_HOST,     /* host0: — debugger host fs (dev tree) */
-  BOOT_DISC,     /* disc0:/umd0: — UMD or ISO game boot */
-  BOOT_MEMSTICK, /* ms0:/ef0: — EBOOT.PBP from the stick */
-};
+/* Enum + rationale live in boot_kind.h; storage is shared with texture_gu. */
+static enum boot_kind s_boot_kind = BOOT_UNKNOWN;
+
+enum boot_kind psp_boot_kind(void) { return s_boot_kind; }
+
+void psp_set_boot_kind(enum boot_kind kind) { s_boot_kind = kind; }
 
 static enum boot_kind kind_of(const char *dev) {
   if (!dev)
@@ -146,7 +148,7 @@ static const char *exe_kind(const char *p) {
  * when running from a disc image.
  */
 static enum boot_kind boot_report(int argc, char **argv) {
-  char buf[1024];
+  char buf[2048];
   char cwd[256];
   int n = 0;
   memset(buf, 0, sizeof(buf));
@@ -163,6 +165,7 @@ static enum boot_kind boot_report(int argc, char **argv) {
   const char *argv0 = (argc > 0 && argv && argv[0]) ? argv[0] : NULL;
   const char *src_dev = path_dev(argv0) ? path_dev(argv0) : path_dev(cwd);
   enum boot_kind kind = kind_of(src_dev);
+  psp_set_boot_kind(kind);
 
   ADD("[boot] argc=%d\n", argc);
   for (int i = 0; i < argc && i < 8; i++)
@@ -183,12 +186,53 @@ static enum boot_kind boot_report(int argc, char **argv) {
     if (getcwd(cwd, sizeof(cwd)))
       ADD("[boot] cwd now=%s\n", cwd);
   }
-  FILE *probe = fopen("assets/textures/parcel_32.png", "rb");
-  if (probe) {
-    fclose(probe);
-    ADD("[boot] probe relative assets=ok\n");
+  /* Ground truth: rel vs abs, stdio vs raw sceIo, plus what the firmware
+   * directory reader actually sees on the disc. */
+  static const char *rel_p = "assets/textures/parcel_32.png";
+  static const char *abs_p = "disc0:/PSP_GAME/USRDIR/assets/textures/parcel_32.png";
+  static const char *ctl_p = "disc0:/PSP_GAME/SYSDIR/EBOOT.BIN";
+  FILE *pf;
+
+  errno = 0;
+  pf = fopen(rel_p, "rb");
+  ADD("[boot] probe rel  stdio=%s errno=%d\n", pf ? "ok" : "missing", errno);
+  if (pf)
+    fclose(pf);
+
+  errno = 0;
+  pf = fopen(abs_p, "rb");
+  ADD("[boot] probe abs  stdio=%s errno=%d\n", pf ? "ok" : "missing", errno);
+  if (pf)
+    fclose(pf);
+
+  errno = 0;
+  pf = fopen(ctl_p, "rb");
+  ADD("[boot] probe ctl  stdio=%s errno=%d\n", pf ? "ok" : "missing", errno);
+  if (pf)
+    fclose(pf);
+
+  int sfd = sceIoOpen(abs_p, PSP_O_RDONLY, 0);
+  if (sfd >= 0) {
+    ADD("[boot] probe abs  sceIo=ok\n");
+    sceIoClose(sfd);
   } else {
-    ADD("[boot] probe relative assets=missing\n");
+    ADD("[boot] probe abs  sceIo=err 0x%x\n", (unsigned)sfd);
+  }
+
+  int dd = sceIoDopen("disc0:/PSP_GAME/USRDIR/assets/textures");
+  if (dd >= 0) {
+    SceIoDirent de;
+    int shown = 0;
+    ADD("[boot] probe dopen textures=ok\n");
+    memset(&de, 0, sizeof(de));
+    while (sceIoDread(dd, &de) > 0 && shown < 4) {
+      ADD("[boot]   dname=%s\n", de.d_name);
+      memset(&de, 0, sizeof(de));
+      shown++;
+    }
+    sceIoDclose(dd);
+  } else {
+    ADD("[boot] probe dopen textures=err 0x%x\n", (unsigned)dd);
   }
 
   printf("%s", buf);

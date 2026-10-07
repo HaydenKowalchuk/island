@@ -1,10 +1,14 @@
 #include "texture_gu.h"
 
+#include "boot_kind.h"
+
 #include <malloc.h> /* memalign (newlib) */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <pspgu.h>
+#include <pspiofilemgr.h>
 #include <pspkernel.h>
 
 /*
@@ -53,6 +57,43 @@ static int try_load(const char *path, int *w, int *h, unsigned char **out) {
   return 1;
 }
 
+/*
+ * Disc/iso boots read the texture through raw sceIo with an absolute path:
+ * firmware relative-path handling is unreliable there (and stdio/fopen is
+ * just sceIoOpen underneath anyway), so skip the expansion entirely.
+ */
+static unsigned char *load_disc(const char *path, int *w, int *h) {
+  SceIoStat st;
+  memset(&st, 0, sizeof(st));
+  if (sceIoGetstat(path, &st) < 0 || st.st_size <= 0)
+    return NULL;
+  size_t size = (size_t)st.st_size;
+  unsigned char *raw = (unsigned char *)malloc(size);
+  if (!raw)
+    return NULL;
+  SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+  if (fd < 0) {
+    free(raw);
+    return NULL;
+  }
+  size_t got = 0;
+  while (got < size) {
+    int r = sceIoRead(fd, raw + got, (unsigned int)(size - got));
+    if (r <= 0)
+      break;
+    got += (size_t)r;
+  }
+  sceIoClose(fd);
+  if (got != size) {
+    free(raw);
+    return NULL;
+  }
+  int comp = 0;
+  unsigned char *data = stbi_load_from_memory(raw, (int)size, w, h, &comp, 4);
+  free(raw);
+  return data;
+}
+
 static TextureId load_texture(const char *name) {
   char path[512];
   int w = 0, h = 0;
@@ -63,10 +104,15 @@ static TextureId load_texture(const char *name) {
     snprintf(path, sizeof(path), "%s/%s", env, name);
     try_load(path, &w, &h, &data);
   }
+  if (!data && psp_boot_kind() == BOOT_DISC) {
+    snprintf(path, sizeof(path), "disc0:/PSP_GAME/USRDIR/assets/%s", name);
+    data = load_disc(path, &w, &h);
+  }
   if (!data) {
+    /* Non-disc boots: cwd already points at the game (host0 dev tree, PBP
+     * dir), so the relative root is the primary mechanism. */
     static const char *roots[] = {
         "host0:/assets",
-        "disc0:/PSP_GAME/USRDIR/assets",
         "ms0:/PSP/GAME/island/assets",
         "assets",
     };
