@@ -311,7 +311,7 @@ static void build_parcel(void) {
   mesh_make(&s_parcel);
   mesh_add_box(&s_parcel, (const float[]){0.0f, 0.0f, 0.0f},
                (const float[]){0.35f, 0.35f, 0.35f}, white);
-  s_parcel.texture = texture_get("textures/parcel_32.png");
+  s_parcel.texture = texture_get("textures/parcel.png");
 }
 
 /* Low-poly humanoid (island1-urkr placeholder): a few flat-shaded boxes. */

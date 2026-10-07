@@ -188,8 +188,8 @@ static enum boot_kind boot_report(int argc, char **argv) {
   }
   /* Ground truth: rel vs abs, stdio vs raw sceIo, plus what the firmware
    * directory reader actually sees on the disc. */
-  static const char *rel_p = "assets/textures/parcel_32.png";
-  static const char *abs_p = "disc0:/PSP_GAME/USRDIR/assets/textures/parcel_32.png";
+  static const char *rel_p = "assets/textures/parcel.png";
+  static const char *abs_p = "disc0:/PSP_GAME/USRDIR/assets/textures/parcel.png";
   static const char *ctl_p = "disc0:/PSP_GAME/SYSDIR/EBOOT.BIN";
   FILE *pf;
 
@@ -218,6 +218,26 @@ static enum boot_kind boot_report(int argc, char **argv) {
   } else {
     ADD("[boot] probe abs  sceIo=err 0x%x\n", (unsigned)sfd);
   }
+
+  errno = 0;
+  pf = fopen("disc0:/PSP_GAME/USRDIR/assets/textures/PARCEL.PNG", "rb");
+  ADD("[boot] probe upper stdio=%s errno=%d\n", pf ? "ok" : "missing", errno);
+  if (pf)
+    fclose(pf);
+
+  errno = 0;
+  pf = fopen("disc0:/PSP_GAME/USRDIR/assets/textures/parcel.png;1", "rb");
+  ADD("[boot] probe vers  stdio=%s errno=%d\n", pf ? "ok" : "missing", errno);
+  if (pf)
+    fclose(pf);
+
+  SceIoStat gst;
+  memset(&gst, 0, sizeof(gst));
+  int gsr = sceIoGetstat(abs_p, &gst);
+  if (gsr >= 0)
+    ADD("[boot] probe getstat abs=ok\n");
+  else
+    ADD("[boot] probe getstat abs=err 0x%x\n", (unsigned)gsr);
 
   int dd = sceIoDopen("disc0:/PSP_GAME/USRDIR/assets/textures");
   if (dd >= 0) {
