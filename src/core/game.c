@@ -1076,6 +1076,72 @@ static void emit_wake(float t) {
   r_ribbon(pts, s_trail_count, 1.6f, foam);
 }
 
+/* Wrap to (-PI, PI], same rule as chase_cam's angle_wrap. */
+static float wrap_pi(float a) {
+  while (a > ISLAND_PI)
+    a -= 2.0f * ISLAND_PI;
+  while (a < -ISLAND_PI)
+    a += 2.0f * ISLAND_PI;
+  return a;
+}
+
+/*
+ * Top-centre compass tape to the active objective (island1-n7to). North is
+ * +Z (the car's start heading) and each next cardinal sits at -90 degrees
+ * bearing from the previous (N/E/S/W clockwise seen with north ahead): the
+ * lookAt right-hand basis puts positive bearing LEFT of the view, so tape x
+ * runs backwards against the angle. The view heading comes from the chase
+ * rig's eased heading, or the fly cam's yaw (0 = +X) folded into the same
+ * convention. Marks past +/-90 degrees clamp to the tape edge.
+ */
+static void draw_compass(const float *white) {
+  const float *obs = active_pos();
+  const float *obj = active_target();
+  float view_yaw;
+  if (s_cam_mode == CAM_CHASE)
+    view_yaw = s_chase.heading_lag;
+  else
+    view_yaw = ISLAND_PI / 2.0f - s_cam.yaw * (ISLAND_PI / 180.0f);
+  float rel = wrap_pi(atan2f(obj[0] - obs[0], obj[2] - obs[2]) - view_yaw);
+
+  const float cx = (float)s_view_w * 0.5f;
+  const float w = 220.0f;
+  const float h = 14.0f;
+  const float top = 8.0f;
+  const float half = w * 0.5f;
+  const float span = ISLAND_PI / 2.0f;
+  const float inv_w = 1.0f / (float)s_view_w;
+  const float inv_h = 1.0f / (float)s_view_h;
+
+  const float bg[4] = {0.02f, 0.03f, 0.05f, 0.50f};
+  r_rect_2d((cx - half) * inv_w, ((float)s_view_h - top - h) * inv_h,
+            w * inv_w, h * inv_h, bg);
+
+  static const char *card[4] = {"N", "E", "S", "W"};
+  const float card_a[4] = {0.0f, -ISLAND_PI / 2.0f, ISLAND_PI,
+                           ISLAND_PI / 2.0f};
+  for (int i = 0; i < 4; i++) {
+    float rc = wrap_pi(card_a[i] - view_yaw);
+    if (rc < -span || rc > span)
+      continue;
+    r_text_2d((int)(cx - (rc / span) * half - 4.0f), (int)top + 3, 1.0f,
+              card[i], white);
+  }
+
+  const float tick[4] = {1.0f, 1.0f, 1.0f, 0.75f};
+  r_rect_2d((cx - 1.0f) * inv_w, ((float)s_view_h - top - h + 2.0f) * inv_h,
+            2.0f * inv_w, (h - 4.0f) * inv_h, tick);
+
+  float mx = cx - (rel / span) * half;
+  if (rel > span)
+    mx = cx - half + 2.0f;
+  else if (rel < -span)
+    mx = cx + half - 2.0f;
+  const float mark[4] = {1.0f, 0.95f, 0.40f, 1.0f};
+  r_rect_2d((mx - 2.0f) * inv_w, ((float)s_view_h - top - h + 1.0f) * inv_h,
+            4.0f * inv_w, (h - 2.0f) * inv_h, mark);
+}
+
 void game_render(float frame_dt) {
   r_frame_begin();
   r_viewport(s_view_w, s_view_h);
@@ -1163,6 +1229,9 @@ void game_render(float frame_dt) {
     }
     snprintf(buf, sizeof(buf), "DELIVERED %d", s_delivered);
     r_text_2d(12, 94, 1.0f, buf, white);
+
+    if (s_quest != GAME_QUEST_DONE)
+      draw_compass(white);
 
     /* Center toast that fades after a delivery. */
     if (s_toast_timer > 0.0f) {
