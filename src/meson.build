@@ -50,14 +50,21 @@ if opt_platform == 'desktop'
     'psp-copy-assets',
     input: [],
     output: 'assets.stamp',
+    # Always re-examined so adds/renames/deletes/content edits under assets/
+    # are picked up (input: [] alone never re-ran after the first build).
+    # Only recopy + bump the stamp when the tree actually differs, so
+    # downstream targets keyed on the stamp don't rebuild on every ninja.
     command: [
       find_program('sh'),
-      '-c', 'rm -rf "$2/assets" && cp -R "$1" "$2" && touch "$0"',
+      '-c',
+      'if [ -f "$0" ] && diff -rq "$1" "$2/assets" >/dev/null 2>&1; then :; '
+      + 'else rm -rf "$2/assets" && cp -R "$1" "$2" && touch "$0"; fi',
       '@OUTPUT@',
       meson.project_source_root() / 'assets',
       meson.current_build_dir(),
     ],
     build_by_default: true,
+    build_always_stale: true,
   )
 elif opt_platform == 'dreamcast'
   # Native KOS PVR backend. KOS headers come from the toolchain install;
@@ -96,14 +103,21 @@ elif opt_platform == 'dreamcast'
     'dc-copy-assets',
     input: [],
     output: 'assets.stamp',
+    # Always re-examined so adds/renames/deletes/content edits under assets/
+    # are picked up (input: [] alone never re-ran after the first build).
+    # Only recopy + bump the stamp when the tree actually differs, so
+    # downstream targets keyed on the stamp don't rebuild on every ninja.
     command: [
       find_program('sh'),
-      '-c', 'rm -rf "$2/assets" && cp -R "$1" "$2" && touch "$0"',
+      '-c',
+      'if [ -f "$0" ] && diff -rq "$1" "$2/assets" >/dev/null 2>&1; then :; '
+      + 'else rm -rf "$2/assets" && cp -R "$1" "$2" && touch "$0"; fi',
       '@OUTPUT@',
       meson.project_source_root() / 'assets',
       meson.current_build_dir(),
     ],
     build_by_default: true,
+    build_always_stale: true,
   )
 
   # Package into a DiscJuggler image (1ST_READ.BIN + IP.BIN + assets), ready
@@ -179,14 +193,21 @@ elif opt_platform == 'psp'
     'psp-copy-assets',
     input: [],
     output: 'assets.stamp',
+    # Always re-examined so adds/renames/deletes/content edits under assets/
+    # are picked up (input: [] alone never re-ran after the first build).
+    # Only recopy + bump the stamp when the tree actually differs, so
+    # downstream targets keyed on the stamp don't rebuild on every ninja.
     command: [
       find_program('sh'),
-      '-c', 'rm -rf "$2/assets" && cp -R "$1" "$2" && touch "$0"',
+      '-c',
+      'if [ -f "$0" ] && diff -rq "$1" "$2/assets" >/dev/null 2>&1; then :; '
+      + 'else rm -rf "$2/assets" && cp -R "$1" "$2" && touch "$0"; fi',
       '@OUTPUT@',
       meson.project_source_root() / 'assets',
       meson.current_build_dir(),
     ],
     build_by_default: true,
+    build_always_stale: true,
   )
 
   # Post-process into a homebrew EBOOT.PBP (title, prx, then the two CFW
