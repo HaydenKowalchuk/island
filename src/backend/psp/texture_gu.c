@@ -33,7 +33,7 @@
  * one upload per name, sampled with NEAREST for the low-poly look.
  *
  * Geometry is built from untextured vertex colours, so this path is only used
- * for the odd textured prop (assets/textures/parcel.png).
+ * for the odd textured prop (assets/textures/parcel_32.png).
  */
 #define MAX_TEXTURES 64
 

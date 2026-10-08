@@ -4,8 +4,6 @@
 # matching volume id:
 #
 #   island_base.iso  current pack (-U, no system use)          HW: boots, assets load
-#   island_rr.iso    + Rock Ridge (-r): SUSP system-use present HW: REFUSES TO BOOT
-#                    (retail discs have no RR either — never ship -r images)
 #   island_uxa.iso   + the exact 14-byte system-use field retail UMDs have
 #                    (00 00 00 00 <8d|0d> 'UXA' + 6 NULs), patched into every
 #                    directory record with scripts/iso_uxa.py
@@ -22,9 +20,9 @@ BUILD="$DIR/build_psp"
 STAGE="$DIR/.scratch/psp_iso"
 command -v mksfo >/dev/null 2>&1 || { echo "mksfo not found (pspdev)" >&2; exit 1; }
 
-# Only the three variant outputs — never a broad glob, which would eat
+# Only these variant outputs — never a broad glob, which would eat
 # island_long.iso (and any other one-off test image) on every rerun.
-rm -f "$BUILD/island_base.iso" "$BUILD/island_rr.iso" "$BUILD/island_uxa.iso"
+rm -f "$BUILD/island_base.iso" "$BUILD/island_uxa.iso"
 
 for v in base uxa; do
     "$DIR/scripts/build_psp_iso.sh" >/dev/null

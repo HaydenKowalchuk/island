@@ -10,16 +10,16 @@
  *   Triangle car     Start pause       Home quit      nub steer / pan
  */
 
-#include <stdint.h>
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include <pspdisplay.h>
-#include <pspiofilemgr.h>
 #include <pspgu.h>
+#include <pspiofilemgr.h>
 #include <pspkernel.h>
 
 #include "boot_kind.h"
@@ -188,8 +188,9 @@ static enum boot_kind boot_report(int argc, char **argv) {
   }
   /* Ground truth: rel vs abs, stdio vs raw sceIo, plus what the firmware
    * directory reader actually sees on the disc. */
-  static const char *rel_p = "assets/textures/parcel.png";
-  static const char *abs_p = "disc0:/PSP_GAME/USRDIR/assets/textures/parcel.png";
+  static const char *rel_p = "assets/textures/parcel_32.png";
+  static const char *abs_p =
+      "disc0:/PSP_GAME/USRDIR/assets/textures/parcel_32.png";
   static const char *ctl_p = "disc0:/PSP_GAME/SYSDIR/EBOOT.BIN";
   FILE *pf;
 
@@ -220,13 +221,13 @@ static enum boot_kind boot_report(int argc, char **argv) {
   }
 
   errno = 0;
-  pf = fopen("disc0:/PSP_GAME/USRDIR/assets/textures/PARCEL.PNG", "rb");
+  pf = fopen("disc0:/PSP_GAME/USRDIR/assets/textures/PARCEL_32.PNG", "rb");
   ADD("[boot] probe upper stdio=%s errno=%d\n", pf ? "ok" : "missing", errno);
   if (pf)
     fclose(pf);
 
   errno = 0;
-  pf = fopen("disc0:/PSP_GAME/USRDIR/assets/textures/parcel.png;1", "rb");
+  pf = fopen("disc0:/PSP_GAME/USRDIR/assets/textures/parcel_32.png;1", "rb");
   ADD("[boot] probe vers  stdio=%s errno=%d\n", pf ? "ok" : "missing", errno);
   if (pf)
     fclose(pf);
@@ -256,7 +257,7 @@ static enum boot_kind boot_report(int argc, char **argv) {
   }
 
   printf("%s", buf);
-
+#if 0
   /* host0: (psplink / emulator host fs) lands on the PC; ms0:/ef0: are the
    * stick. Write every one that opens so the report shows up wherever the
    * session actually lives. */
@@ -274,6 +275,7 @@ static enum boot_kind boot_report(int argc, char **argv) {
   }
   if (!wrote)
     printf("[boot] (nowhere to write island_boot.txt)\n");
+#endif
 #undef ADD
   return kind;
 }

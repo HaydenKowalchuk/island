@@ -8,6 +8,11 @@ Directory extents in our layout are one 2048-byte block with ample slack, so
 records grow in place; extents and the path tables are untouched. Aborts if a
 directory would overflow its original size.
 
+Run automatically by scripts/build_psp_iso.sh on every image — required for
+firmware to open names longer than 8.3 (hardware A/B: without this patch long
+names return ENOENT). mkisofs -xa/-XA cannot replace this: their directory
+records match retail but file records get 09 11 58 41 instead of 0d 55 58 41.
+
 Usage: iso_uxa.py <image.iso>
 """
 import struct

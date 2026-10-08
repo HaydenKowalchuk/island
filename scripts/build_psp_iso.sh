@@ -47,6 +47,17 @@ cp "$ART/pic1.png"        "$STAGE/PSP_GAME/PIC1.PNG"
 
 # USRDIR holds only our data. The texture loader falls back to the relative
 # root "assets", which resolves here when cwd is PSP_GAME/USRDIR on the disc.
+#
+# HARDWARE CONSTRAINT: every ISO must carry the retail XA 14-byte system-use
+# field on all directory records (applied automatically below via iso_uxa.py).
+# Firmware open() returns ENOENT for records without it when the name exceeds
+# ISO9660 8.3, even though sceIoDopen lists the file. Proven A/B on hardware:
+#   long name + no SU   (island_long)    -> ENOENT, texture missing
+#   long name + SU14    (island_long_uxa)-> works perfectly
+#   8.3 name  + no SU   (island_base)    -> works (SU not required <=8.3)
+# mkisofs -xa/-XA alone is NOT equivalent: dirs match retail but file records
+# differ (09 11 58 41 vs retail 0d 55 58 41). Keep running iso_uxa.py on
+# every image; long filenames are fine once patched.
 rm -rf "$STAGE/PSP_GAME/USRDIR"
 mkdir -p "$STAGE/PSP_GAME/USRDIR"
 cp -R "$BUILD/src/assets" "$STAGE/PSP_GAME/USRDIR/assets"
@@ -60,5 +71,8 @@ find "$STAGE" -name '.DS_Store' -delete
 
 mkisofs -A "PSP GAME" -V "NDC_ISLAND" -sysid "PSP GAME" -volset "" -p "" \
     -publisher "" -U -o "$OUT" "$STAGE"
+
+# Mandatory: inject the retail XA system-use field (long-name open fix above).
+python3 "$DIR/scripts/iso_uxa.py" "$OUT"
 
 echo "build_psp_iso: wrote $OUT ($(stat -f%z "$OUT") bytes)"
