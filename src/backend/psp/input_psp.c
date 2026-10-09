@@ -13,9 +13,12 @@
  *   R        -> throttle (vehicle, digital)   L  -> brake (vehicle, digital)
  *   Cross    -> boost                             Square -> ACT_INTERACT
  *   Triangle -> ACT_VEHICLE                       Start  -> ACT_PAUSE
- *   Select   -> ACT_DEV_DEBUG                     Home   -> ACT_QUIT
- *   D-pad Up -> inventory overlay (island1-iim2)
- *   Vol+ / Vol- -> ACT_DEV_CAM / ACT_DEV_RESET
+ *   Select   -> ACT_INVENTORY (overlay shortcut; long-term this moves into
+ *               a Start-opened menu - see island1-umaa)     Home -> ACT_QUIT
+ *   L+R held (dev chord) + Circle -> ACT_DEV_CAM; + D-pad Up -> ACT_DEV_RESET
+ *               (no face button carries a gameplay action reserved for
+ *               dev-only use, and volume keys are left alone - not for game
+ *               bindings)
  *   nub X    -> AX_STEER; nub Y -> fwd/back on foot only (AX_THROTTLE /
  *              AX_BRAKE), so the walking player moves on the stick alone;
  *              D-pad steers when the nub is centred.
@@ -42,6 +45,10 @@ static unsigned int s_prev_buttons;
 /* Emitted state of the digital throttle/brake actions, see update_triggers. */
 static int s_prev_throttle;
 static int s_prev_brake;
+
+/* Emitted state of the chorded dev actions (see dev_chord comment). */
+static int s_prev_dev_cam;
+static int s_prev_dev_reset;
 
 /* Every action this table raises, so a failed poll can release all of them. */
 static const Action s_mapped[] = {
@@ -93,6 +100,8 @@ static void neutral_input(void) {
   s_prev_buttons = 0;
   s_prev_throttle = 0;
   s_prev_brake = 0;
+  s_prev_dev_cam = 0;
+  s_prev_dev_reset = 0;
 }
 
 static float nub_axis(unsigned char raw, float deadzone) {
@@ -112,6 +121,8 @@ void backend_input_init(void) {
   s_prev_buttons = 0;
   s_prev_throttle = 0;
   s_prev_brake = 0;
+  s_prev_dev_cam = 0;
+  s_prev_dev_reset = 0;
   sceCtrlSetSamplingCycle(0);
   sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
 }
@@ -130,12 +141,25 @@ void backend_input_poll(void) {
   key_event(b, PSP_CTRL_TRIANGLE, ACT_VEHICLE);
   key_event(b, PSP_CTRL_START, ACT_PAUSE);
   key_event(b, PSP_CTRL_HOME, ACT_QUIT);
-  // key_event(b, PSP_CTRL_SELECT, ACT_DEV_DEBUG);
   key_event(b, PSP_CTRL_SELECT, ACT_INVENTORY);
-  /* Dev bindings live on the volume keys: the triggers carry the vehicle
-   * throttle/brake now, and the face buttons all carry gameplay actions. */
-  key_event(b, PSP_CTRL_VOLUP, ACT_DEV_CAM);
-  key_event(b, PSP_CTRL_VOLDOWN, ACT_DEV_RESET);
+
+  /* Dev chord: both triggers held unlocks Circle as ACT_DEV_CAM and D-pad Up
+   * as ACT_DEV_RESET. Neither button carries a gameplay action, so there is
+   * nothing to suppress - but the chord must break cleanly if the player
+   * releases a trigger mid-press, which raw key_event would miss (it only
+   * compares against each button's own prev-state mask). Volume keys stay
+   * out of game bindings entirely. */
+  int dev_chord = (b & PSP_CTRL_LTRIGGER) && (b & PSP_CTRL_RTRIGGER);
+  int want_dev_cam = dev_chord && (b & PSP_CTRL_CIRCLE) ? 1 : 0;
+  if (want_dev_cam != s_prev_dev_cam) {
+    input_event_key(ACT_DEV_CAM, want_dev_cam);
+    s_prev_dev_cam = want_dev_cam;
+  }
+  int want_dev_reset = dev_chord && (b & PSP_CTRL_UP) ? 1 : 0;
+  if (want_dev_reset != s_prev_dev_reset) {
+    input_event_key(ACT_DEV_RESET, want_dev_reset);
+    s_prev_dev_reset = want_dev_reset;
+  }
 
   /* Analog steer with a deadzone; D-pad overrides when the nub is centred. */
   float steer = nub_axis(pad.Lx, STEER_DEADZONE);

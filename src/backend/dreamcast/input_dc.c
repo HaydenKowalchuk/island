@@ -22,7 +22,12 @@
  *                   alone; D-pad steers when the stick is centred
  *   Start        -> pause
  *   A+B+X+Y+Start -> quit (KOS convention for exiting)
- *   B            -> ACT_DEV_CAM (dev fly cam; the only free face button)
+ *   B            -> nothing alone; both levers held (dev chord) + B ->
+ *                   ACT_DEV_CAM (dev fly cam). No face button carries a
+ *                   gameplay action, so the dev binding needs a chord to
+ *                   stay out of the way (island1-umaa).
+ *   (inventory is not a button: it lives in a Start-opened menu, tracked
+ *    separately - not wired here yet.)
  *
  * R accelerates and L brakes, matching the usual console convention (Xbox and
  * PlayStation pads put the accelerator on the right trigger).
@@ -56,6 +61,9 @@ static const Action s_mapped[] = {
     ACT_THROTTLE, ACT_BRAKE, ACT_BOOST, ACT_INTERACT, ACT_VEHICLE,
     ACT_PAUSE, ACT_QUIT, ACT_DEV_CAM,
 };
+
+/* Emitted state of the chorded dev-cam action (see dev_chord comment). */
+static int s_prev_dev_cam;
 
 static void key_event(unsigned int buttons, unsigned int mask, Action action) {
     int now = (buttons & mask) ? 1 : 0;
@@ -120,6 +128,7 @@ static void neutral_input(void) {
     s_prev_quit = 0;
     s_prev_throttle = 0;
     s_prev_brake = 0;
+    s_prev_dev_cam = 0;
 }
 
 void input_dc_init(void) {
@@ -131,6 +140,7 @@ void backend_input_init(void) {
     s_prev_quit = 0;
     s_prev_throttle = 0;
     s_prev_brake = 0;
+    s_prev_dev_cam = 0;
 }
 
 void backend_input_poll(void) {
@@ -149,12 +159,24 @@ void backend_input_poll(void) {
     GameMode mode = game_mode();
 
     /* Mode-independent context actions. A = boost (the R lever is the
-     * vehicle's throttle now). */
+     * vehicle's throttle now). B carries no gameplay action, so the dev
+     * chord below is what raises ACT_DEV_CAM from it. */
     key_event(buttons, CONT_A, ACT_BOOST);
     key_event(buttons, CONT_Y, ACT_INTERACT);
     key_event(buttons, CONT_X, ACT_VEHICLE);
     key_event(buttons, CONT_START, ACT_PAUSE);
-    key_event(buttons, CONT_B, ACT_DEV_CAM);
+
+    /* Dev chord: both levers past threshold unlocks B as ACT_DEV_CAM. This
+     * needs its own edge tracking, not key_event's - the latter compares
+     * against the raw B-mask prev state, which would miss the case where B
+     * is already held when the chord breaks (or engages) mid-press. */
+    int dev_chord = (st->rtrig > TRIGGER_THRESHOLD) &&
+                    (st->ltrig > TRIGGER_THRESHOLD);
+    int want_dev_cam = dev_chord && (buttons & CONT_B) ? 1 : 0;
+    if (want_dev_cam != s_prev_dev_cam) {
+        input_event_key(ACT_DEV_CAM, want_dev_cam);
+        s_prev_dev_cam = want_dev_cam;
+    }
 
     /* Stick X steers in both modes; D-pad overrides when the stick is
      * centred. joyx is -128..127 and already centred on 0 by KOS. */

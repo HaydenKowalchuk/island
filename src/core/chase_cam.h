@@ -35,6 +35,12 @@ void chase_cam_set_ground(ChaseGroundFn fn);
  */
 void chase_cam_set_framing(float dist, float height, float look_height);
 
+/*
+ * Vertical FOV in RADIANS that preserves the 16:9 horizontal FOV at `aspect`
+ * (island1-t21d). Shared with the attract camera (island1-7u5i).
+ */
+float chase_vfov_for_aspect(float ref_vfov_deg, float aspect);
+
 void chase_cam_update(ChaseCam* c, const float car_pos[3], float heading,
                       float speed_kmh, int width, int height, float dt);
 

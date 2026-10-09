@@ -95,6 +95,15 @@ static Mesh s_player_mesh;
 #define TOAST_TIME 1.8f
 #define CAR_START_X 0.0f
 #define CAR_START_Z 0.0f
+
+/* Attract-backdrop framing (island1-7u5i): the menu camera drifts around a
+ * point over water south of the start while looking at the main island, so
+ * the water, the parked car and the island all stay in frame. */
+#define MENU_ANCHOR_X 0.0f
+#define MENU_ANCHOR_Z -24.0f
+#define MENU_LOOK_X 0.0f
+#define MENU_LOOK_Z 78.0f
+
 #define HOUSE_COUNT 4
 #define NPC_LOOK_RANGE 30.0f
 #define TALK_RANGE                                                             \
@@ -525,6 +534,7 @@ static void apply_cam_framing(void);
 
 void game_init(void) {
   menu_init(); /* boot into the intro (island1-tpz8) */
+  menu_set_backdrop(MENU_ANCHOR_X, MENU_ANCHOR_Z, MENU_LOOK_X, MENU_LOOK_Z);
   cam_init(&s_cam);
   s_time = 0.0f;
   s_rng = 0x1234567u;
@@ -1380,10 +1390,23 @@ void game_render(float frame_dt) {
   r_frame_begin();
   r_viewport(s_view_w, s_view_h);
 
+  /* Intro (island1-zfn6): black boot card — no scene, no camera work,
+   * cheapest on PSP/DC too. The fade and text are recorded by menu_render(). */
+  if (menu_screen() == MENU_SCREEN_INTRO) {
+    r_clear(0.0f, 0.0f, 0.0f, 1.0f);
+    menu_render();
+    return;
+  }
+
   const float fog_color[4] = {SKY_COLOR_R, SKY_COLOR_G, SKY_COLOR_B, 1.0f};
   r_fog(1, fog_color, FOG_START, FOG_END);
 
-  if (s_cam_mode == CAM_CHASE) {
+  if (menu_screen() != MENU_SCREEN_PLAY) {
+    /* Attract backdrop (island1-7u5i): scripted drift shot for the front-end;
+     * the gameplay cameras stay parked until play resumes. */
+    menu_cam_update(s_view_w, s_view_h);
+    r_camera(menu_cam_view(), menu_cam_proj());
+  } else if (s_cam_mode == CAM_CHASE) {
     if (s_mode == MODE_FOOT)
       chase_cam_update(&s_chase, s_player.pos, s_player.heading,
                        s_player.speed_kmh, s_view_w, s_view_h, frame_dt);

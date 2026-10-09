@@ -52,7 +52,7 @@ static float clampf(float v, float lo, float hi) {
 }
 
 /* Vertical FOV (radians) that preserves the 16:9 horizontal FOV at `aspect`. */
-static float vfov_for_aspect(float ref_vfov_deg, float aspect) {
+float chase_vfov_for_aspect(float ref_vfov_deg, float aspect) {
     float half_h = tanf(ref_vfov_deg * (float)(ISLAND_PI / 180.0) * 0.5f) *
                    CHASE_REF_ASPECT;
     return 2.0f * atanf(half_h / aspect);
@@ -125,6 +125,6 @@ void chase_cam_update(ChaseCam* c, const float car_pos[3], float heading,
     c->fov = CHASE_FOV_BASE + s01 * CHASE_FOV_GAIN; /* reference FOV at 16:9 */
     float aspect =
         (height > 0) ? (float)width / (float)height : CHASE_REF_ASPECT;
-    glm_perspective(vfov_for_aspect(c->fov, aspect), aspect, CHASE_ZNEAR,
+    glm_perspective(chase_vfov_for_aspect(c->fov, aspect), aspect, CHASE_ZNEAR,
                     CHASE_ZFAR, c->proj);
 }
