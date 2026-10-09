@@ -36,7 +36,7 @@ if opt_platform == 'desktop'
     'backend/desktop/render_gl.c',
     'backend/desktop/texture_gl.c',
   )
-  platform_deps = [glad_dep, glfw_dep]
+  platform_deps = [glad_dep, glfw_dep, miniaudio_dep]
   platform_args = ['-DGLFW_INCLUDE_NONE']
   platform_inc = []
 
@@ -82,7 +82,7 @@ elif opt_platform == 'dreamcast'
     'backend/dreamcast/render_dc.c',
     'backend/dreamcast/texture_dc.c',
   )
-  platform_deps = []
+  platform_deps = [miniaudio_dep]
   platform_args = []
   platform_inc = [
     include_directories('backend/desktop'),
@@ -157,6 +157,12 @@ elif opt_platform == 'psp'
     'backend/psp/main.c',
     'backend/psp/render_gu.c',
     'backend/psp/texture_gu.c',
+    # Real MA_SUPPORT_PSP vtable (integrity's proven sceAudio glue). Only
+    # compiled here -- desktop/dreamcast never define MA_SUPPORT_PSP, and
+    # subprojects/miniaudio/miniaudio.h gates every reference to
+    # ma_device_backend_psp behind that same macro, so those platforms never
+    # see or need this symbol at all.
+    'backend/psp/ma_backend_psp.c',
   )
 
   # pspsdk link recipe (matches the psp-dev sample/prx layout): everything is
@@ -187,7 +193,7 @@ elif opt_platform == 'psp'
     'island',
     core_sources + backend_sources,
     include_directories: [core_inc, backend_inc],
-    dependencies: [cglm_dep],
+    dependencies: [cglm_dep, miniaudio_dep],
     link_args: psp_link_args,
     install: false,
   )
@@ -363,3 +369,16 @@ terrain_cull_test = executable(
   install: false,
 )
 test('terrain-cull', terrain_cull_test)
+
+# Throwaway smoke test (island1-9bg7): just proves miniaudio itself compiles
+# and links via ma_version() on the host, mips-allegrex, and sh4-kos, before
+# any game code calls into it. Prints 0.11.26 (dev-0.12 has not bumped the
+# MA_VERSION_* macros yet -- the branch name is what matters, not the literal
+# string).
+audio_smoke_test = executable(
+  'audio-smoke-test',
+  files('../tests/audio_smoke.c'),
+  dependencies: [miniaudio_dep],
+  install: false,
+)
+test('audio-smoke', audio_smoke_test)

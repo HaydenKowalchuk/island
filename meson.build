@@ -52,6 +52,17 @@ if not cglm_dep.found()
   cglm_dep = cglm_proj.get_variable('cglm_dep')
 endif
 
+# miniaudio: single-header audio (decoders + device backends). Vendored as a
+# slimmed snapshot (just meson.build + miniaudio.c + miniaudio.h) matching
+# integrity's known-good build on desktop/dreamcast/psp -- dev-0.12 branch,
+# commit a55d2e7e, already containing the MA_PSP stub plumbing and the full
+# native MA_SUPPORT_DREAMCAST (KOS/AICA) backend inlined. Not a wrap-file on
+# purpose: island1-26pd will edit this header directly to flesh out the real
+# PSP device backend, and a wrap would get clobbered/re-downloaded on top of
+# those local edits.
+ma_proj = subproject('miniaudio')
+miniaudio_dep = ma_proj.get_variable('ma_dep')
+
 math_dep = cc.find_library('m', required: false)
 
 subdir('src')

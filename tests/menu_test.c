@@ -51,6 +51,53 @@ int main(void) {
   const float *after = game_vehicle_pos();
   assert(after[0] == parked[0] && after[2] == parked[2]);
 
+  /* Camera handover (island1-38h3): run the attract backdrop like the real
+   * loop, then confirm — the chase must LERP from the drifting eye, never
+   * cut to the vehicle framing. */
+  for (int i = 0; i < 30; i++) {
+    input_begin_frame();
+    game_tick(1.0f / 60.0f);
+  }
+  game_render(1.0f / 60.0f);
+  float e1[3], carp[3];
+  const float *ep = game_cam_pos();
+  e1[0] = ep[0];
+  e1[1] = ep[1];
+  e1[2] = ep[2];
+  const float *cp = game_vehicle_pos();
+  carp[0] = cp[0];
+  carp[1] = cp[1];
+  carp[2] = cp[2];
+
+  input_event_key(ACT_MENU_CONFIRM, true);
+  input_begin_frame();
+  game_tick(1.0f / 60.0f);
+  input_event_key(ACT_MENU_CONFIRM, false);
+  input_begin_frame();
+  game_tick(1.0f / 60.0f);
+  game_render(1.0f / 60.0f);
+  float c1[3];
+  const float *c1p = game_cam_pos();
+  c1[0] = c1p[0];
+  c1[1] = c1p[1];
+  c1[2] = c1p[2];
+  float d1 = dist3(c1, carp);
+  assert(d1 > 12.0f); /* one frame in: still near the attract eye, no jump */
+
+  for (int i = 0; i < 120; i++) {
+    input_begin_frame();
+    game_tick(1.0f / 60.0f);
+    game_render(1.0f / 60.0f);
+  }
+  float c2[3];
+  const float *c2p = game_cam_pos();
+  c2[0] = c2p[0];
+  c2[1] = c2p[1];
+  c2[2] = c2p[2];
+  float d2 = dist3(c2, carp);
+  assert(d2 < 9.0f);      /* converged to the vehicle framing */
+  assert(d1 - d2 > 5.0f); /* it travelled — the lerp happened */
+
   /* The intro also advances on its own timer with no input at all; the
    * exact card timings are hand-tuned and not pinned here. */
   menu_set_screen(MENU_SCREEN_INTRO);
