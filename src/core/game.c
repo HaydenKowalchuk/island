@@ -969,14 +969,16 @@ static void walk_player(float dt) {
       fmaxf(input_axis(AX_BRAKE), input_held(ACT_BRAKE) ? 1.0f : 0.0f);
   float steer = input_axis(AX_STEER);
 
-  /* Camera-relative basis: forward is the eased chase heading, right is 90
-   * degrees clockwise of it on the XZ plane. The chase heading only advances
+  /* Camera-relative basis: forward is the eased chase heading; right is the
+   * camera's screen-right, cross(fwd, up) = (-cos h, sin h), matching the
+   * car's turn-right direction (yaw_target = -steer lowers heading, which
+   * swings the nose toward -X when facing +Z). The chase heading only advances
    * in game_render, so within the tick it is last frame's -- fine for input. */
   float cam_h = s_chase.heading_lag;
   float fwd_x = sinf(cam_h);
   float fwd_z = cosf(cam_h);
-  float rgt_x = cosf(cam_h);
-  float rgt_z = -sinf(cam_h);
+  float rgt_x = -cosf(cam_h);
+  float rgt_z = sinf(cam_h);
 
   float mx = fwd_x * (throttle - brake) + rgt_x * steer;
   float mz = fwd_z * (throttle - brake) + rgt_z * steer;

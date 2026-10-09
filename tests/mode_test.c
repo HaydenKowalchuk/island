@@ -101,8 +101,9 @@ int main(void) {
 
     /*
      * Camera-relative movement (island1-7duk): place_player faces +z, so the
-     * camera basis is forward +z / right +x. Steer alone must strafe along +x
-     * with no forward drift, not turn-in-place like the old tank controls.
+     * camera basis is forward +z / screen-right -x (cross(fwd, up), same as
+     * the car's turn-right direction). Steer alone must strafe along -x with
+     * no forward drift, not turn-in-place like the old tank controls.
      */
     game_place_player(-2.0f, 78.0f);
     float sx = game_player_pos()[0];
@@ -115,8 +116,8 @@ int main(void) {
     input_event_axis(AX_STEER, 0.0f);
     float sdx = game_player_pos()[0] - sx;
     float sdz = game_player_pos()[2] - sz;
-    assert(sdx > 0.3f);
-    assert(fabsf(sdz) < sdx * 0.25f);
+    assert(sdx < -0.3f);
+    assert(fabsf(sdz) < -sdx * 0.25f);
 
     /*
      * Wading (island1-7duk): probe for a shallow-water strip (between sea
