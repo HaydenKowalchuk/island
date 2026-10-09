@@ -10,12 +10,15 @@
 #include <stdio.h>
 
 #include "game.h"
+#include "menu.h"
 #include "mesh.h"
 #include "render.h"
 #include "terrain.h"
 
 int main(void) {
     game_init();
+    /* Gameplay tests jump straight into PLAY (the boot state is INTRO). */
+    menu_set_screen(MENU_SCREEN_PLAY);
     game_resize(320, 240);
 
     for (int i = 0; i < 3; i++)

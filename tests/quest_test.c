@@ -11,6 +11,7 @@
 #include "inventory.h"
 #include "input.h"
 #include "items.h"
+#include "menu.h"
 #include "quest.h"
 
 static void tap_interact(void) {
@@ -41,6 +42,8 @@ static void visit_and_talk(int house) {
 
 int main(void) {
     game_init();
+    /* Gameplay tests jump straight into PLAY (the boot state is INTRO). */
+    menu_set_screen(MENU_SCREEN_PLAY);
 
     assert(game_quest_phase() == GAME_QUEST_REQUEST);
     assert(!game_quest_carried());

@@ -27,6 +27,18 @@ static const KeyBinding s_bindings[] = {
     { GLFW_KEY_C, ACT_DEV_CAM },
     { GLFW_KEY_F3, ACT_DEV_DEBUG },
     { GLFW_KEY_ESCAPE, ACT_QUIT },
+    /* Menu-nav aliases (island1-tpz8): gameplay keys double as menu input, so
+     * the same bindings work while the front-end is up. A key may map to
+     * several actions; key_cb fires every match. */
+    { GLFW_KEY_UP, ACT_MENU_UP },
+    { GLFW_KEY_W, ACT_MENU_UP },
+    { GLFW_KEY_DOWN, ACT_MENU_DOWN },
+    { GLFW_KEY_S, ACT_MENU_DOWN },
+    { GLFW_KEY_ENTER, ACT_MENU_CONFIRM },
+    { GLFW_KEY_KP_ENTER, ACT_MENU_CONFIRM },
+    { GLFW_KEY_SPACE, ACT_MENU_CONFIRM },
+    { GLFW_KEY_ESCAPE, ACT_MENU_BACK },
+    { GLFW_KEY_BACKSPACE, ACT_MENU_BACK },
 };
 
 /* A/D (and the arrows) drive the steer axis: left=-1, right=+1. */
@@ -47,14 +59,6 @@ static float s_mouse_dy;
 static double s_last_mouse_x;
 static double s_last_mouse_y;
 
-static Action action_from_key(int key) {
-    for (size_t i = 0; i < sizeof(s_bindings) / sizeof(s_bindings[0]); i++) {
-        if (s_bindings[i].key == key)
-            return s_bindings[i].action;
-    }
-    return ACT_COUNT;
-}
-
 static void key_cb(GLFWwindow* win, int key, int scancode, int action, int mods) {
     (void)win;
     (void)scancode;
@@ -73,11 +77,12 @@ static void key_cb(GLFWwindow* win, int key, int scancode, int action, int mods)
     else if (key == GLFW_KEY_S || key == GLFW_KEY_DOWN)
         s_brake = down ? 1u : 0u;
 
-    Action a = action_from_key(key);
-    if (a == ACT_COUNT)
-        return;
-
-    input_event_key(a, down);
+    /* Fire every action bound to this key (a key may appear twice: ESC is
+     * both quit and menu-back); unused screens ignore the extras. */
+    for (size_t i = 0; i < sizeof(s_bindings) / sizeof(s_bindings[0]); i++) {
+        if (s_bindings[i].key == key)
+            input_event_key(s_bindings[i].action, down);
+    }
 }
 
 static void mouse_button_cb(GLFWwindow* win, int button, int action, int mods) {

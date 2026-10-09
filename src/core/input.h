@@ -20,6 +20,11 @@ typedef enum {
     ACT_PAUSE,
     ACT_INVENTORY, /* toggle the inventory overlay */
     ACT_QUIT,
+    /* front-end flow (island1-tpz8): menu navigation */
+    ACT_MENU_UP,
+    ACT_MENU_DOWN,
+    ACT_MENU_CONFIRM,
+    ACT_MENU_BACK,
     /* dev-only actions, outside the gameplay contract */
     ACT_DEV_CAM,
     ACT_DEV_DEBUG,

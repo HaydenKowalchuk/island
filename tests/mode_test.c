@@ -4,9 +4,12 @@
 
 #include "game.h"
 #include "input.h"
+#include "menu.h"
 
 int main(void) {
     game_init();
+    /* Gameplay tests jump straight into PLAY (the boot state is INTRO). */
+    menu_set_screen(MENU_SCREEN_PLAY);
 
     /* Over water, F is ignored: there is nothing to stand on. */
     game_place_vehicle(0.0f, 0.0f, 0.0f);

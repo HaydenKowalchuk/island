@@ -17,6 +17,7 @@ core_sources = files(
   'core/input.c',
   'core/inventory.c',
   'core/items.c',
+  'core/menu.c',
   'core/mesh.c',
   'core/quest.c',
   'core/render.c',
@@ -299,6 +300,17 @@ input_test = executable(
   install: false,
 )
 test('input', input_test)
+
+# GL-free test for the front-end flow state machine (island1-tpz8): boot into
+# the intro, gameplay gated until PLAY, skip/confirm transitions, edges.
+menu_test = executable(
+  'menu-test',
+  files('../tests/menu_test.c') + core_sources,
+  include_directories: [core_inc],
+  dependencies: [cglm_dep, math_dep],
+  install: false,
+)
+test('menu', menu_test)
 
 # GL-free behaviour test for the chase camera spring/lag.
 chase_cam_test = executable(

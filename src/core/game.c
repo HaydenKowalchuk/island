@@ -15,6 +15,7 @@
 #include "inventory.h"
 #include "items.h"
 #include "lod.h"
+#include "menu.h"
 #include "mesh.h"
 #include "pi.h"
 #include "quest.h"
@@ -519,6 +520,7 @@ static void build_depot(void) {
 static void apply_cam_framing(void);
 
 void game_init(void) {
+  menu_init(); /* boot into the intro (island1-tpz8) */
   cam_init(&s_cam);
   s_time = 0.0f;
   s_rng = 0x1234567u;
@@ -869,6 +871,14 @@ static void walk_player(float dt) {
 
 void game_tick(float dt) {
   s_time += dt;
+
+  /* Front-end flow (island1-tpz8): the menu ticks before the gameplay gates
+   * and consumes the press that drives a transition, so it is not reused by
+   * the rules below. The world keeps breathing while gameplay waits (waves
+   * and bob read s_time), which is what keeps the menu backdrop alive. */
+  menu_tick(dt);
+  if (menu_screen() != MENU_SCREEN_PLAY)
+    return;
 
   if (input_pressed(ACT_DEV_CAM)) {
     s_cam_mode = (s_cam_mode == CAM_CHASE) ? CAM_FLY : CAM_CHASE;
@@ -1405,8 +1415,9 @@ void game_render(float frame_dt) {
   char buf[48];
 
   /* Inventory overlay (island1-iim2): TAB on desktop, D-pad Up on PSP.
-   * Independent of the F3 stats HUD, and usable mid-conversation. */
-  if (s_inv_open) {
+   * Independent of the F3 stats HUD, and usable mid-conversation. Gameplay
+   * UI only: hidden while the front-end is up (island1-tpz8). */
+  if (s_inv_open && menu_screen() == MENU_SCREEN_PLAY) {
     r_pass(R_PASS_HUD);
     int rows = inv_used();
     if (rows < 1)
@@ -1440,7 +1451,7 @@ void game_render(float frame_dt) {
     r_text_2d(bx + 8, by + bh - 12, 1.0f, "TAB / UP CLOSE", white);
   }
 
-  if (s_hud) {
+  if (s_hud && menu_screen() == MENU_SCREEN_PLAY) {
     int on_land = terrain_height_at(s_veh.pos[0], s_veh.pos[2]) > 0.0f;
     float pdx = s_player.pos[0] - s_veh.pos[0];
     float pdz = s_player.pos[2] - s_veh.pos[2];
@@ -1588,4 +1599,8 @@ void game_render(float frame_dt) {
    * (island1-a2xf). It owns the bottom third; the beacon is world-space and
    * the readouts live above the box, so nothing is covered. */
   dialog_draw();
+
+  /* Front-end overlay (island1-tpz8): intro/menu UI records last, over
+   * everything, so the backend presents it on top of the scene. */
+  menu_render();
 }
