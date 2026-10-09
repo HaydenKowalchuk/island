@@ -28,8 +28,8 @@ int main(void) {
   /* 1. The draw primitive records into the HUD/overlay pipeline. */
   r_frame_begin();
   r_viewport(320, 180);
-  hud_dialog_draw("MAYOR", "WELCOME TO THE ISLAND.", 3.0f);
-  hud_dialog_draw(NULL, "WELCOME TO THE ISLAND.", 8.0f); /* anonymous speaker */
+  hud_dialog_draw("MAYOR", "WELCOME TO THE ISLAND.", 3.0f, 0);
+  hud_dialog_draw(NULL, "WELCOME TO THE ISLAND.", 8.0f, 0); /* anonymous */
   const RenderFrame* fr = r_frame();
   CHECK(fr->draw_count > 0, "dialog records draws");
   CHECK(fr->pass_draws[R_PASS_HUD] == fr->draw_count, "dialog draws land in the HUD pass");
@@ -103,6 +103,46 @@ int main(void) {
         "line 1 survives the caller's frame dying");
   dialog_update(0.0f, 1); /* close */
   CHECK(!dialog_active(), "stack-started conversation closes normally");
+
+  /* 7. Small screens (island1-s81y): at PSP 480x272 the layout drops to 1x
+   *    text so a long residents-table line wraps entirely into the box -
+   *    one page, nothing clipped. */
+  {
+    static const char* const long_lines[] = {
+        "IF YOUR CAR WHINES IN THIRD IT'S THE BEARING. NOT THE SPIRITS, "
+        "LIKE MARLOWE SAYS."};
+    r_viewport(480, 272);
+    dialog_start("TESTER", long_lines, 1);
+    CHECK(strlen(long_lines[0]) >= 80, "line is representative of table copy");
+    dialog_update(10.0f, 0);
+    CHECK(dialog_line_complete(), "PSP-sized line fully reveals");
+    CHECK(dialog_page_count() == 1,
+          "PSP 480x272 fits a long line in one page");
+    dialog_update(0.0f, 1); /* single page: E advances and closes */
+    CHECK(!dialog_active(), "single-page long line closes on E");
+  }
+
+  /* 8. Below every fitting scale the line pages with E instead of clipping:
+   *    exactly page_count() presses - one per page, the last closes. */
+  {
+    static const char* const paged_lines[] = {
+        "THE LIGHTHOUSE KEEPER COUNTS THE SHIPS THAT NEVER ARRIVE AND "
+        "WISHES ON EVERY SINGLE ONE FOR SOMETHING TO CHANGE."};
+    r_viewport(240, 160);
+    dialog_start("TESTER", paged_lines, 1);
+    dialog_update(10.0f, 0);
+    int pages = dialog_page_count();
+    CHECK(pages > 1, "tiny viewport pages a long line");
+    int clicks = 0;
+    while (dialog_active() && clicks < 16) {
+      CHECK(dialog_page() >= 0 && dialog_page() < pages,
+            "page index stays in range");
+      dialog_update(0.0f, 1);
+      clicks++;
+    }
+    CHECK(!dialog_active(), "paging conversation closes after the last page");
+    CHECK(clicks == pages, "one E per page, then close");
+  }
 
   if (failures) {
     printf("%d dialog test failure(s)\n", failures);

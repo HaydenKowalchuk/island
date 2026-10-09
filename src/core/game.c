@@ -97,9 +97,10 @@ static Mesh s_player_mesh;
 #define CAR_START_Z 0.0f
 #define HOUSE_COUNT 4
 #define NPC_LOOK_RANGE 30.0f
-#define TALK_RANGE 3.0f /* on-foot conversation radius (island1-9fm3);
-                         * wider than VEHICLE_EXIT_OFFSET so stepping out of
-                         * the car at the doorstep is already in range */
+#define TALK_RANGE                                                             \
+  3.0f /* on-foot conversation radius (island1-9fm3);                          \
+        * wider than VEHICLE_EXIT_OFFSET so stepping out of                    \
+        * the car at the doorstep is already in range */
 
 _Static_assert(HOUSE_COUNT == RESIDENT_COUNT,
                "one dialogue table per house (residents.h)");
@@ -107,7 +108,10 @@ _Static_assert(HOUSE_COUNT == RESIDENT_COUNT,
 /* What each house ordered — the sealed parcel's contents on spawn
  * (island1-iim2; quest chains override per step, island1-f9x2). */
 static const uint16_t s_house_parcel_item[HOUSE_COUNT] = {
-    ITEM_NET_TWINE, ITEM_RADIO_TUBE, ITEM_PIGMENT, ITEM_BRASS_GEAR,
+    ITEM_NET_TWINE,
+    ITEM_RADIO_TUBE,
+    ITEM_PIGMENT,
+    ITEM_BRASS_GEAR,
 };
 
 /* Recipient house + the resident standing at its doorway. */
@@ -293,7 +297,7 @@ static void quest_step_entered(void) {
     id = s_house_parcel_item[h];
   }
   game_parcel_configure(t == QSTEP_CLAIM ? GAME_PARCEL_LOST
-                                        : GAME_PARCEL_ADDRESSED,
+                                         : GAME_PARCEL_ADDRESSED,
                         &id, &qty, 1);
   quest_place_package();
 }
@@ -1344,8 +1348,8 @@ static void draw_compass(const float *white) {
   const float inv_h = 1.0f / (float)s_view_h;
 
   const float bg[4] = {0.02f, 0.03f, 0.05f, 0.50f};
-  r_rect_2d((cx - half) * inv_w, ((float)s_view_h - top - h) * inv_h,
-            w * inv_w, h * inv_h, bg);
+  r_rect_2d((cx - half) * inv_w, ((float)s_view_h - top - h) * inv_h, w * inv_w,
+            h * inv_h, bg);
 
   static const char *card[4] = {"N", "E", "S", "W"};
   const float card_a[4] = {0.0f, -ISLAND_PI / 2.0f, ISLAND_PI,
@@ -1431,11 +1435,10 @@ void game_render(float frame_dt) {
     /* px -> normalized, y flipped bottom-up like dialog.c's rect_px. */
     float nx = (float)bx / (float)s_view_w;
     float ny = 1.0f - (float)(by + bh) / (float)s_view_h;
-    r_rect_2d(nx - 0.004f, ny - 0.010f,
-              (float)bw / (float)s_view_w + 0.008f,
+    r_rect_2d(nx - 0.004f, ny - 0.010f, (float)bw / (float)s_view_w + 0.008f,
               (float)bh / (float)s_view_h + 0.020f, edge);
-    r_rect_2d(nx, ny, (float)bw / (float)s_view_w,
-              (float)bh / (float)s_view_h, panel);
+    r_rect_2d(nx, ny, (float)bw / (float)s_view_w, (float)bh / (float)s_view_h,
+              panel);
     r_text_2d(bx + 8, by + 6, 1.0f, "INVENTORY", white);
     if (inv_used() == 0) {
       r_text_2d(bx + 8, by + 20, 1.0f, "EMPTY", white);
@@ -1498,8 +1501,8 @@ void game_render(float frame_dt) {
         if (odist <= TALK_RANGE)
           r_text_2d(12, 76, 1.0f, "E TALK TO DELIVER", white);
         else {
-          snprintf(buf, sizeof(buf), "HOUSE %d  %.0fm",
-                   quest_step_target() + 1, odist);
+          snprintf(buf, sizeof(buf), "HOUSE %d  %.0fm", quest_step_target() + 1,
+                   odist);
           r_text_2d(12, 76, 1.0f, buf, white);
         }
       } else if (qt == QSTEP_TALK) {
