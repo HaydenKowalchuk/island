@@ -1,6 +1,8 @@
 #ifndef ISLAND_CORE_GAME_H
 #define ISLAND_CORE_GAME_H
 
+#include <stdint.h>
+
 /*
  * Core game entry points. A backend owns the window/loop and drives the game:
  *
@@ -28,6 +30,9 @@ const float* game_vehicle_pos(void);
 /* Teleport the parked car (spawn/reset/tests). Snaps it to the ground. */
 void game_place_vehicle(float x, float z, float heading);
 
+/* Teleport the walking player and enter foot mode (spawn/reset/tests). */
+void game_place_player(float x, float z);
+
 /* Gameplay HUD visibility (island1-fovq); the F3 debug overlay is separate. */
 void game_set_hud(int on);
 int game_hud_enabled(void);
@@ -44,6 +49,7 @@ int game_delivered_count(void);
 
 /* Target resident (the current recipient house's resident). */
 const float *game_npc_pos(void);
+const float *game_resident_pos(int house); /* any house, clamped */
 const float *game_package_pos(void);
 const float *game_depot_pos(void);
 int game_target_house(void);
@@ -51,5 +57,22 @@ int game_target_house(void);
 /* Objective beacon: where it is and whether it is currently shown. */
 int game_beacon_active(void);
 const float *game_beacon_pos(void);
+
+/* Parcel payload (island1-iim2). An ADDRESSED parcel has a readable label:
+ * it belongs to the resident and is delivered sealed — the player never
+ * opens it. A LOST parcel (obscured label / partially open) is ours: claiming
+ * moves its stacks into the player inventory. */
+typedef enum { GAME_PARCEL_ADDRESSED, GAME_PARCEL_LOST } GameParcelKind;
+#define GAME_PARCEL_MAX_ITEMS 3
+GameParcelKind game_parcel_kind(void);
+int game_parcel_slot_count(void);
+/* Stack i of the current payload; returns 0 past the end. */
+int game_parcel_slot(int i, uint16_t *id, uint16_t *count);
+/* (Re)load the payload — quest spawn / tests. Empty or zero stacks drop out. */
+void game_parcel_configure(GameParcelKind kind, const uint16_t *ids,
+                           const uint16_t *counts, int n);
+/* LOST only: move contents into the player inventory. Returns 1 when
+ * anything was claimed (leftovers stay in the parcel if the bag is full). */
+int game_parcel_claim(void);
 
 #endif

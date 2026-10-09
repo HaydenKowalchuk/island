@@ -12,9 +12,12 @@
 #include "dialog.h"
 #include "frustum.h"
 #include "input.h"
+#include "inventory.h"
+#include "items.h"
 #include "lod.h"
 #include "mesh.h"
 #include "pi.h"
+#include "quest.h"
 #include "render.h"
 #include "residents.h"
 #include "terrain.h"
@@ -100,6 +103,12 @@ static Mesh s_player_mesh;
 _Static_assert(HOUSE_COUNT == RESIDENT_COUNT,
                "one dialogue table per house (residents.h)");
 
+/* What each house ordered — the sealed parcel's contents on spawn
+ * (island1-iim2; quest chains override per step, island1-f9x2). */
+static const uint16_t s_house_parcel_item[HOUSE_COUNT] = {
+    ITEM_NET_TWINE, ITEM_RADIO_TUBE, ITEM_PIGMENT, ITEM_BRASS_GEAR,
+};
+
 /* Recipient house + the resident standing at its doorway. */
 typedef struct {
   vec3 base;     /* house origin on the ground (door faces +z of the mesh) */
@@ -124,12 +133,17 @@ static const float HOUSE_TINT[HOUSE_COUNT][4] = {
 static House s_houses[HOUSE_COUNT];
 static vec3 s_depot;
 
-static GameQuestPhase s_quest = GAME_QUEST_REQUEST;
-static float s_quest_timer = 0.0f;
 static float s_toast_timer = 0.0f;
-static int s_delivered = 0;
-static int s_target_house = -1;
+static const char *s_toast_msg = "+1  PACKAGE DELIVERED";
+static int s_delivery_house = -1; /* resident awaiting the open reaction */
+static int s_step_seq_seen = -1;  /* quest step entry hook (island1-f9x2) */
 static vec3 s_pkg_pos;
+/* Parcel payload (island1-iim2): sealed ADDRESSED parcels turn in whole at
+ * the resident; LOST ones (obscured label) are claimed into the inventory. */
+static GameParcelKind s_parcel_kind = GAME_PARCEL_ADDRESSED;
+static int s_parcel_n;
+static uint16_t s_parcel_ids[GAME_PARCEL_MAX_ITEMS];
+static uint16_t s_parcel_qty[GAME_PARCEL_MAX_ITEMS];
 static unsigned int s_rng = 0x1234567u;
 static Mesh s_pack;
 static Mesh s_house;
@@ -153,26 +167,18 @@ static void quest_place_package(void) {
   s_pkg_pos[2] = s_depot[2];
 }
 
-static void quest_new_request(void) {
-  int idx;
-  do {
-    idx = (int)(rng_next() % (unsigned)HOUSE_COUNT);
-  } while (idx == s_target_house);
-  s_target_house = idx;
-  s_quest = GAME_QUEST_REQUEST;
-  quest_place_package();
-}
-
 /* Position of whatever the player is currently controlling. */
 static const float *active_pos(void) {
   return (s_mode == MODE_FOOT) ? s_player.pos : s_veh.pos;
 }
 
-/* The active objective: the depot while requesting, else the target resident.
- */
+/* The active objective: the depot for pickup/claim steps, else the step's
+ * resident (quest chains drive it, island1-f9x2). */
 static const float *active_target(void) {
-  return (s_quest == GAME_QUEST_CARRY) ? s_houses[s_target_house].resident
-                                       : s_depot;
+  QuestStepType t = quest_step_type();
+  if ((t == QSTEP_DELIVER || t == QSTEP_TALK) && quest_step_target() >= 0)
+    return s_houses[quest_step_target()].resident;
+  return s_depot;
 }
 
 /* ---- Conversations (island1-9fm3) ------------------------------------ */
@@ -223,10 +229,10 @@ static void start_keeper_talk(void) {
 static void npc_tick(void) {
   if (s_delivery_pending && !dialog_active()) {
     s_delivery_pending = 0;
-    s_quest = GAME_QUEST_DONE;
-    s_quest_timer = QUEST_DONE_TIME;
     s_toast_timer = TOAST_TIME;
-    s_delivered++;
+    s_toast_msg = "+1  PACKAGE DELIVERED";
+    s_parcel_n = 0; /* sealed parcel handed over whole (island1-iim2) */
+    quest_notify_deliver(s_delivery_house);
   }
 
   s_talk_house = -1;
@@ -247,39 +253,80 @@ static void npc_tick(void) {
   if (s_talk_house < 0 || !input_pressed(ACT_INTERACT))
     return;
 
+  /* The line set follows the current quest step (island1-f9x2). */
   const Dialogue *d = resident_dialogue(s_talk_house);
+  QuestStepType t = quest_step_type();
+  int target = quest_step_target();
+  int chain_house = game_target_house();
   const char *line;
-  if (s_talk_house == s_target_house && s_quest == GAME_QUEST_CARRY) {
+  if (t == QSTEP_DELIVER && s_talk_house == target && quest_carried()) {
     line = pick_line(d->lines_delivery, 4, s_talk_house);
+    s_delivery_house = s_talk_house;
     s_delivery_pending = 1;
-  } else if (s_talk_house == s_target_house &&
-             s_quest == GAME_QUEST_REQUEST) {
+  } else if (t == QSTEP_PICKUP && s_talk_house == chain_house &&
+             !quest_carried()) {
     line = pick_line(d->lines_no_package, 3, s_talk_house);
   } else {
     line = pick_line(d->lines_idle, 4, s_talk_house);
+    if (t == QSTEP_TALK && s_talk_house == target)
+      quest_notify_talk(s_talk_house); /* the talk objective is met */
   }
   const char *lines[1] = {line};
   dialog_start(d->name, lines, 1);
 }
 
-static void quest_tick(float dt) {
-  const float *ap = active_pos();
+/* Stage the parcel when a pickup/claim step begins (island1-f9x2). */
+static void quest_step_entered(void) {
+  s_step_seq_seen = quest_step_seq();
+  if (quest_carried() || quest_paused())
+    return;
+  QuestStepType t = quest_step_type();
+  if (t != QSTEP_PICKUP && t != QSTEP_CLAIM)
+    return;
+  uint16_t id = quest_step_item();
+  uint16_t qty = quest_step_count() ? quest_step_count() : 1;
+  if (!id) { /* delivery run: the house's standing order */
+    int h = game_target_house();
+    if (h < 0)
+      h = 0;
+    id = s_house_parcel_item[h];
+  }
+  game_parcel_configure(t == QSTEP_CLAIM ? GAME_PARCEL_LOST
+                                        : GAME_PARCEL_ADDRESSED,
+                        &id, &qty, 1);
+  quest_place_package();
+}
 
-  if (s_quest == GAME_QUEST_REQUEST) {
-    float dx = ap[0] - s_depot[0];
-    float dz = ap[2] - s_depot[2];
-    if (dx * dx + dz * dz <= QUEST_PICKUP_RANGE * QUEST_PICKUP_RANGE &&
-        !dialog_active() && input_pressed(ACT_INTERACT)) {
-      s_quest = GAME_QUEST_CARRY;
-      start_keeper_talk(); /* BREN's hand-off voice (island1-9fm3). */
+/* World half of the quest loop: gifts, step entry, depot E, look-at, and the
+ * chain's own tick. Replaces the old phase machine (island1-f9x2). */
+static void quest_world_tick(float dt) {
+  /* Gifts queued by quest.c: show once the current toast has played out. */
+  if (s_toast_timer <= 0.0f) {
+    const char *gift = quest_take_toast();
+    if (gift) {
+      s_toast_msg = gift;
+      s_toast_timer = TOAST_TIME;
     }
-  } else if (s_quest == GAME_QUEST_DONE) {
-    /* Hold the next request while a conversation is on screen. The delivery
-     * itself happens through npc_tick(): talk to the target on foot. */
-    if (!dialog_active())
-      s_quest_timer -= dt;
-    if (s_quest_timer <= 0.0f)
-      quest_new_request();
+  }
+
+  if (quest_step_seq() != s_step_seq_seen)
+    quest_step_entered();
+
+  const float *ap = active_pos();
+  float pdx = ap[0] - s_depot[0];
+  float pdz = ap[2] - s_depot[2];
+  if (pdx * pdx + pdz * pdz <= QUEST_PICKUP_RANGE * QUEST_PICKUP_RANGE &&
+      !dialog_active() && !quest_paused() && input_pressed(ACT_INTERACT)) {
+    if (quest_step_type() == QSTEP_PICKUP && !quest_carried()) {
+      quest_notify_pickup();
+      start_keeper_talk(); /* BREN's hand-off voice (island1-9fm3). */
+    } else if (quest_step_type() == QSTEP_CLAIM) {
+      if (game_parcel_claim()) {
+        s_toast_msg = "LOST PARCEL KEPT";
+        s_toast_timer = TOAST_TIME;
+      }
+      quest_notify_claim();
+    }
   }
 
   if (s_toast_timer > 0.0f)
@@ -301,10 +348,13 @@ static void quest_tick(float dt) {
       d += 2.0f * (float)ISLAND_PI;
     h->look += d * (1.0f - expf(-6.0f * dt));
   }
+
+  /* Chain progression waits for an open box to close. */
+  if (!dialog_active())
+    quest_tick(dt);
 }
 
-/*
- * Wake trail: the actual recent path of the car in the XZ plane. Recording
+/*\n * Wake trail: the actual recent path of the car in the XZ plane. Recording
  * world-space points (instead of resampling a fake rope every frame) keeps the
  * ribbon still; the y value is rebuilt each frame from the wave field.
  */
@@ -345,6 +395,7 @@ static CamMode s_cam_mode = CAM_CHASE;
 
 /* Gameplay HUD visibility (island1-fovq); toggled by game_set_hud(). */
 static int s_hud = 1;
+static int s_inv_open = 0; /* inventory overlay (island1-iim2) */
 
 /* Dev overlay (F3) and ocean cull counters shown in it. */
 static int s_debug = 0;
@@ -471,11 +522,14 @@ void game_init(void) {
   cam_init(&s_cam);
   s_time = 0.0f;
   s_rng = 0x1234567u;
-  s_delivered = 0;
-  s_target_house = -1;
   s_toast_timer = 0.0f;
+  s_toast_msg = "+1  PACKAGE DELIVERED";
   s_talk_house = -1;
   s_delivery_pending = 0;
+  s_delivery_house = -1;
+  s_step_seq_seen = -1;
+  s_inv_open = 0;
+  inv_init();
   for (int i = 0; i < RESIDENT_COUNT + 1; i++)
     s_last_line[i] = -1;
 
@@ -526,7 +580,8 @@ void game_init(void) {
     h->look = h->facing;
   }
 
-  quest_new_request();
+  quest_init();
+  quest_step_entered(); /* stage the first parcel at the depot */
 }
 
 void game_shutdown(void) {
@@ -555,21 +610,89 @@ const float *game_player_pos(void) { return s_player.pos; }
 
 const float *game_vehicle_pos(void) { return s_veh.pos; }
 
-GameQuestPhase game_quest_phase(void) { return s_quest; }
+GameQuestPhase game_quest_phase(void) {
+  if (quest_paused())
+    return GAME_QUEST_DONE;
+  return quest_carried() ? GAME_QUEST_CARRY : GAME_QUEST_REQUEST;
+}
 
-int game_quest_carried(void) { return s_quest == GAME_QUEST_CARRY; }
+int game_quest_carried(void) { return quest_carried(); }
 
-int game_delivered_count(void) { return s_delivered; }
+int game_delivered_count(void) { return quest_delivered(); }
 
-const float *game_npc_pos(void) { return s_houses[s_target_house].resident; }
+const float *game_npc_pos(void) {
+  int h = game_target_house();
+  if (h < 0)
+    h = 0;
+  return s_houses[h].resident;
+}
+
+const float *game_resident_pos(int house) {
+  if (house < 0 || house >= HOUSE_COUNT)
+    house = 0;
+  return s_houses[house].resident;
+}
 
 const float *game_package_pos(void) { return s_pkg_pos; }
 
+/* ---- Parcel payload (island1-iim2) ------------------------------------ */
+
+GameParcelKind game_parcel_kind(void) { return s_parcel_kind; }
+
+int game_parcel_slot_count(void) { return s_parcel_n; }
+
+int game_parcel_slot(int i, uint16_t *id, uint16_t *count) {
+  if (i < 0 || i >= s_parcel_n)
+    return 0;
+  if (id)
+    *id = s_parcel_ids[i];
+  if (count)
+    *count = s_parcel_qty[i];
+  return 1;
+}
+
+void game_parcel_configure(GameParcelKind kind, const uint16_t *ids,
+                           const uint16_t *counts, int n) {
+  if (n < 0)
+    n = 0;
+  if (n > GAME_PARCEL_MAX_ITEMS)
+    n = GAME_PARCEL_MAX_ITEMS;
+  s_parcel_kind = kind;
+  s_parcel_n = 0;
+  for (int i = 0; i < n; i++) {
+    if (!ids || !counts || ids[i] == 0 || counts[i] == 0)
+      continue;
+    s_parcel_ids[s_parcel_n] = ids[i];
+    s_parcel_qty[s_parcel_n] = counts[i];
+    s_parcel_n++;
+  }
+}
+
+int game_parcel_claim(void) {
+  if (s_parcel_kind != GAME_PARCEL_LOST)
+    return 0;
+  int claimed = 0;
+  int out = 0;
+  for (int i = 0; i < s_parcel_n; i++) {
+    int got = inv_add(s_parcel_ids[i], s_parcel_qty[i]);
+    if (got > 0)
+      claimed = 1;
+    int left = (int)s_parcel_qty[i] - got;
+    if (left > 0) { /* bag full: the remainder stays in the parcel */
+      s_parcel_ids[out] = s_parcel_ids[i];
+      s_parcel_qty[out] = (uint16_t)left;
+      out++;
+    }
+  }
+  s_parcel_n = out;
+  return claimed;
+}
+
 const float *game_depot_pos(void) { return s_depot; }
 
-int game_target_house(void) { return s_target_house; }
+int game_target_house(void) { return quest_chain_house(); }
 
-int game_beacon_active(void) { return s_quest != GAME_QUEST_DONE; }
+int game_beacon_active(void) { return !quest_paused(); }
 
 const float *game_beacon_pos(void) { return active_target(); }
 
@@ -583,6 +706,22 @@ void game_place_vehicle(float x, float z, float heading) {
 
   trail_clear();
   chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
+}
+
+/* Teleport the walking player (spawn/reset/tests). Snaps to the ground and
+ * switches to foot mode if the car was active (island1-f9x2). */
+void game_place_player(float x, float z) {
+  float g = terrain_height_at(x, z);
+  s_player.pos[0] = x;
+  s_player.pos[1] = (g > 0.0f) ? g + 0.05f : 0.0f;
+  s_player.pos[2] = z;
+  s_player.speed_kmh = 0.0f;
+  s_player.walk_phase = 0.0f;
+  if (s_mode != MODE_FOOT) {
+    s_mode = MODE_FOOT;
+    apply_cam_framing();
+    chase_cam_init(&s_chase, s_player.pos, s_player.heading);
+  }
 }
 
 void game_set_hud(int on) { s_hud = on ? 1 : 0; }
@@ -747,6 +886,10 @@ void game_tick(float dt) {
   if (input_pressed(ACT_DEV_DEBUG))
     s_debug = !s_debug;
 
+  /* Inventory overlay (island1-iim2): toggles even mid-conversation. */
+  if (input_pressed(ACT_INVENTORY))
+    s_inv_open = !s_inv_open;
+
   if (!dialog_active() && input_pressed(ACT_VEHICLE))
     toggle_vehicle();
 
@@ -776,7 +919,7 @@ void game_tick(float dt) {
       drive_car(dt);
   }
 
-  quest_tick(dt);
+  quest_world_tick(dt);
   npc_tick();
 
   /* Conversation typewriter + E advance/skip (island1-a2xf). Runs after the
@@ -993,10 +1136,16 @@ static void emit_player(float t) {
  * car's rear deck while driving, or hidden on foot in favour of the backpack.
  */
 static void emit_parcel(float t) {
-  if (s_quest == GAME_QUEST_DONE)
+  if (quest_paused())
     return;
-  if (s_quest == GAME_QUEST_CARRY && s_mode == MODE_FOOT)
-    return;
+  if (quest_carried()) {
+    if (s_mode == MODE_FOOT)
+      return; /* the pack on the back reads as carrying (island1-fhno) */
+  } else {
+    QuestStepType qt = quest_step_type();
+    if (qt != QSTEP_PICKUP && qt != QSTEP_CLAIM)
+      return; /* not staged anywhere right now */
+  }
 
   r_pass(R_PASS_PROPS);
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -1004,7 +1153,7 @@ static void emit_parcel(float t) {
   mat4 world;
   glm_mat4_identity(world);
 
-  if (s_quest == GAME_QUEST_CARRY) {
+  if (quest_carried()) {
     glm_translate(world, (vec3){s_veh.pos[0], s_veh.pos[1], s_veh.pos[2]});
     glm_rotate(world, s_veh.heading, (vec3){0.0f, 1.0f, 0.0f});
     glm_translate(world, (vec3){0.0f, 1.05f, -0.45f});
@@ -1080,11 +1229,12 @@ static void emit_residents(float t) {
  * resident. No-op once delivered.
  */
 static void emit_beacon(float t) {
-  if (s_quest == GAME_QUEST_DONE)
+  if (quest_paused())
     return;
 
   const float *p = active_target();
-  const int pickup = (s_quest == GAME_QUEST_REQUEST);
+  const QuestStepType qt = quest_step_type();
+  const int pickup = (qt == QSTEP_PICKUP || qt == QSTEP_CLAIM);
   float color[4] = {pickup ? 0.35f : 0.45f, pickup ? 0.85f : 1.0f,
                     pickup ? 1.0f : 0.45f, 0.0f};
 
@@ -1111,7 +1261,7 @@ static void emit_beacon(float t) {
 /* The carry read on foot: a small pack on the player's back (island1-fhno). */
 static void emit_pack(float t) {
   (void)t;
-  if (!(s_quest == GAME_QUEST_CARRY && s_mode == MODE_FOOT))
+  if (!(quest_carried() && s_mode == MODE_FOOT))
     return;
 
   r_pass(R_PASS_VEHICLE);
@@ -1254,6 +1404,42 @@ void game_render(float frame_dt) {
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
   char buf[48];
 
+  /* Inventory overlay (island1-iim2): TAB on desktop, D-pad Up on PSP.
+   * Independent of the F3 stats HUD, and usable mid-conversation. */
+  if (s_inv_open) {
+    r_pass(R_PASS_HUD);
+    int rows = inv_used();
+    if (rows < 1)
+      rows = 1;
+    int bw = 208;
+    int bh = 40 + rows * 10;
+    int bx = (s_view_w - bw) / 2;
+    int by = (s_view_h - bh) / 2;
+    const float panel[4] = {0.01f, 0.02f, 0.05f, 0.88f};
+    const float edge[4] = {0.72f, 0.82f, 0.95f, 0.95f};
+    /* px -> normalized, y flipped bottom-up like dialog.c's rect_px. */
+    float nx = (float)bx / (float)s_view_w;
+    float ny = 1.0f - (float)(by + bh) / (float)s_view_h;
+    r_rect_2d(nx - 0.004f, ny - 0.010f,
+              (float)bw / (float)s_view_w + 0.008f,
+              (float)bh / (float)s_view_h + 0.020f, edge);
+    r_rect_2d(nx, ny, (float)bw / (float)s_view_w,
+              (float)bh / (float)s_view_h, panel);
+    r_text_2d(bx + 8, by + 6, 1.0f, "INVENTORY", white);
+    if (inv_used() == 0) {
+      r_text_2d(bx + 8, by + 20, 1.0f, "EMPTY", white);
+    } else {
+      for (int i = 0; i < inv_used(); i++) {
+        const InvSlot *slot = inv_slot(i);
+        const ItemDef *def = item_def(slot->id);
+        snprintf(buf, sizeof(buf), "%s  x%d", def ? def->name : "?",
+                 slot->count);
+        r_text_2d(bx + 8, by + 20 + i * 10, 1.0f, buf, white);
+      }
+    }
+    r_text_2d(bx + 8, by + bh - 12, 1.0f, "TAB / UP CLOSE", white);
+  }
+
   if (s_hud) {
     int on_land = terrain_height_at(s_veh.pos[0], s_veh.pos[2]) > 0.0f;
     float pdx = s_player.pos[0] - s_veh.pos[0];
@@ -1274,33 +1460,54 @@ void game_render(float frame_dt) {
                 on_land ? "F GET OUT  F3 STATS" : "DRIVE TO LAND TO DISEMBARK",
                 white);
 
-    /* Delivery objective (island1-pkcj/draq). */
+    /* Objective lines follow the current quest step (island1-f9x2). */
     const float *ap = active_pos();
     const float *tp = active_target();
     float odx = ap[0] - tp[0];
     float odz = ap[2] - tp[2];
     float odist = sqrtf(odx * odx + odz * odz);
 
-    if (s_quest == GAME_QUEST_REQUEST) {
-      if (odist <= QUEST_PICKUP_RANGE)
-        r_text_2d(12, 76, 1.0f, "E PICK UP PACKAGE", white);
-      else {
-        snprintf(buf, sizeof(buf), "DEPOT  %.0fm", odist);
-        r_text_2d(12, 76, 1.0f, buf, white);
+    if (!quest_paused()) {
+      QuestStepType qt = quest_step_type();
+      if (qt == QSTEP_PICKUP) {
+        if (odist <= QUEST_PICKUP_RANGE)
+          r_text_2d(12, 76, 1.0f, "E PICK UP PACKAGE", white);
+        else {
+          snprintf(buf, sizeof(buf), "DEPOT  %.0fm", odist);
+          r_text_2d(12, 76, 1.0f, buf, white);
+        }
+      } else if (qt == QSTEP_CLAIM) {
+        if (odist <= QUEST_PICKUP_RANGE)
+          r_text_2d(12, 76, 1.0f, "E CLAIM LOST PARCEL", white);
+        else {
+          snprintf(buf, sizeof(buf), "LOST PARCEL  %.0fm", odist);
+          r_text_2d(12, 76, 1.0f, buf, white);
+        }
+      } else if (qt == QSTEP_DELIVER) {
+        if (odist <= TALK_RANGE)
+          r_text_2d(12, 76, 1.0f, "E TALK TO DELIVER", white);
+        else {
+          snprintf(buf, sizeof(buf), "HOUSE %d  %.0fm",
+                   quest_step_target() + 1, odist);
+          r_text_2d(12, 76, 1.0f, buf, white);
+        }
+      } else if (qt == QSTEP_TALK) {
+        if (odist <= TALK_RANGE)
+          r_text_2d(12, 76, 1.0f, "E TALK TO RESIDENT", white);
+        else {
+          snprintf(buf, sizeof(buf), "RESIDENT %d  %.0fm",
+                   quest_step_target() + 1, odist);
+          r_text_2d(12, 76, 1.0f, buf, white);
+        }
       }
-    } else if (s_quest == GAME_QUEST_CARRY) {
-      if (odist <= TALK_RANGE)
-        r_text_2d(12, 76, 1.0f, "E TALK TO DELIVER", white);
-      else {
-        snprintf(buf, sizeof(buf), "HOUSE %d  %.0fm", s_target_house + 1,
-                 odist);
-        r_text_2d(12, 76, 1.0f, buf, white);
-      }
+      const char *obj = quest_step_prompt();
+      if (obj)
+        r_text_2d(12, 112, 1.0f, obj, white);
     }
-    snprintf(buf, sizeof(buf), "DELIVERED %d", s_delivered);
+    snprintf(buf, sizeof(buf), "DELIVERED %d", quest_delivered());
     r_text_2d(12, 94, 1.0f, buf, white);
 
-    if (s_quest != GAME_QUEST_DONE)
+    if (!quest_paused())
       draw_compass(white);
 
     /* "E - TALK" over the nearest resident's head (island1-9fm3): project the
@@ -1335,7 +1542,7 @@ void game_render(float frame_dt) {
       if (a > 1.0f)
         a = 1.0f;
       const float toast_col[4] = {1.0f, 0.95f, 0.40f, a};
-      const char *msg = "+1  PACKAGE DELIVERED";
+      const char *msg = s_toast_msg;
       int tw = (int)(8.0f * 3.0f * (float)strlen(msg));
       r_text_2d((s_view_w - tw) / 2, s_view_h / 3, 3.0f, msg, toast_col);
     }

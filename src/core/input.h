@@ -18,6 +18,7 @@ typedef enum {
     ACT_VEHICLE,  /* enter / exit vehicle */
     ACT_LOOK,     /* held while looking (mouse drag; always-on on consoles) */
     ACT_PAUSE,
+    ACT_INVENTORY, /* toggle the inventory overlay */
     ACT_QUIT,
     /* dev-only actions, outside the gameplay contract */
     ACT_DEV_CAM,

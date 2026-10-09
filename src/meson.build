@@ -15,7 +15,10 @@ core_sources = files(
   'core/frustum.c',
   'core/game.c',
   'core/input.c',
+  'core/inventory.c',
+  'core/items.c',
   'core/mesh.c',
+  'core/quest.c',
   'core/render.c',
   'core/residents.c',
   'core/terrain.c',
@@ -276,6 +279,16 @@ quest_test = executable(
   install: false,
 )
 test('quest', quest_test)
+
+# GL-free test for the item registry + player inventory (island1-iim2).
+inventory_test = executable(
+  'inventory-test',
+  files('../tests/inventory_test.c') + core_sources,
+  include_directories: [core_inc],
+  dependencies: [cglm_dep, math_dep],
+  install: false,
+)
+test('inventory', inventory_test)
 
 # GL-free test for the platform-agnostic input contract (actions/axes/edges).
 input_test = executable(

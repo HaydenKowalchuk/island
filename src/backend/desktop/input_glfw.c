@@ -22,6 +22,7 @@ static const KeyBinding s_bindings[] = {
     { GLFW_KEY_RIGHT_SHIFT, ACT_BOOST },
     { GLFW_KEY_E, ACT_INTERACT },
     { GLFW_KEY_F, ACT_VEHICLE },
+    { GLFW_KEY_TAB, ACT_INVENTORY },
     { GLFW_KEY_R, ACT_DEV_RESET },
     { GLFW_KEY_C, ACT_DEV_CAM },
     { GLFW_KEY_F3, ACT_DEV_DEBUG },

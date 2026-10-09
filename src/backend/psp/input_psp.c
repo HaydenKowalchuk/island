@@ -14,6 +14,7 @@
  *   Cross    -> boost                             Square -> ACT_INTERACT
  *   Triangle -> ACT_VEHICLE                       Start  -> ACT_PAUSE
  *   Select   -> ACT_DEV_DEBUG                     Home   -> ACT_QUIT
+ *   D-pad Up -> inventory overlay (island1-iim2)
  *   Vol+ / Vol- -> ACT_DEV_CAM / ACT_DEV_RESET
  *   nub X    -> AX_STEER; nub Y -> fwd/back on foot only (AX_THROTTLE /
  *              AX_BRAKE), so the walking player moves on the stick alone;
@@ -45,8 +46,8 @@ static int s_prev_brake;
 /* Every action this table raises, so a failed poll can release all of them. */
 static const Action s_mapped[] = {
     ACT_THROTTLE, ACT_BRAKE, ACT_BOOST, ACT_INTERACT,
-    ACT_VEHICLE, ACT_PAUSE, ACT_QUIT, ACT_DEV_CAM, ACT_DEV_DEBUG,
-    ACT_DEV_RESET,
+    ACT_VEHICLE, ACT_PAUSE, ACT_INVENTORY, ACT_QUIT, ACT_DEV_CAM,
+    ACT_DEV_DEBUG, ACT_DEV_RESET,
 };
 
 static void key_event(unsigned int buttons, unsigned int mask, Action action) {
@@ -130,6 +131,7 @@ void backend_input_poll(void) {
     key_event(b, PSP_CTRL_START, ACT_PAUSE);
     key_event(b, PSP_CTRL_HOME, ACT_QUIT);
     key_event(b, PSP_CTRL_SELECT, ACT_DEV_DEBUG);
+    key_event(b, PSP_CTRL_UP, ACT_INVENTORY);
     /* Dev bindings live on the volume keys: the triggers carry the vehicle
      * throttle/brake now, and the face buttons all carry gameplay actions. */
     key_event(b, PSP_CTRL_VOLUP, ACT_DEV_CAM);
