@@ -62,9 +62,22 @@ int main(void) {
     beacon = game_beacon_pos();
     assert(beacon[0] == npc[0] && beacon[2] == npc[2]);
 
-    /* Deliver to the resident. */
+    /* Deliver by talking to the resident on foot (island1-9fm3): park at the
+     * door, get out, and the conversation completes the hand-off once its
+     * reaction line is dismissed. */
     game_place_vehicle(npc[0], npc[2], 0.0f);
+    input_event_key(ACT_VEHICLE, true);
+    input_begin_frame();
+    game_tick(1.0f / 60.0f);
+    input_event_key(ACT_VEHICLE, false);
+    input_begin_frame();
+    game_tick(1.0f / 60.0f);
+    assert(game_mode() == GAME_MODE_FOOT);
+
     tap_interact();
+    assert(dialog_active()); /* the resident's reaction line is up */
+    assert(game_quest_phase() == GAME_QUEST_CARRY);
+    dismiss_dialog();
     assert(game_quest_phase() == GAME_QUEST_DONE);
     assert(game_delivered_count() == 1);
     assert(!game_beacon_active());

@@ -16,6 +16,7 @@
 #include "mesh.h"
 #include "pi.h"
 #include "render.h"
+#include "residents.h"
 #include "terrain.h"
 #include "texture.h"
 
@@ -86,13 +87,18 @@ static Mesh s_player_mesh;
 #define DEPOT_X 8.0f
 #define DEPOT_Z 82.0f
 #define QUEST_PICKUP_RANGE 4.5f
-#define QUEST_DELIVER_RANGE 5.0f
 #define QUEST_DONE_TIME 1.4f
 #define TOAST_TIME 1.8f
 #define CAR_START_X 0.0f
 #define CAR_START_Z 0.0f
 #define HOUSE_COUNT 4
 #define NPC_LOOK_RANGE 30.0f
+#define TALK_RANGE 3.0f /* on-foot conversation radius (island1-9fm3);
+                         * wider than VEHICLE_EXIT_OFFSET so stepping out of
+                         * the car at the doorstep is already in range */
+
+_Static_assert(HOUSE_COUNT == RESIDENT_COUNT,
+               "one dialogue table per house (residents.h)");
 
 /* Recipient house + the resident standing at its doorway. */
 typedef struct {
@@ -169,12 +175,92 @@ static const float *active_target(void) {
                                        : s_depot;
 }
 
+/* ---- Conversations (island1-9fm3) ------------------------------------ */
+
+/* Conversation state: the last line picked per speaker (residents
+ * 0..RESIDENT_COUNT-1, depot keeper at RESIDENT_COUNT) so a pick never
+ * repeats back to back, the resident the "E - TALK" prompt currently sits
+ * over, and a delivery whose reaction line is on screen — it completes only
+ * when that box closes, never mid-sentence. */
+static int s_last_line[RESIDENT_COUNT + 1];
+static int s_talk_house = -1;
+static int s_delivery_pending;
+
+/* Contiguous non-NULL entries at the head of a line set. */
+static int count_lines(const char *const *set, int cap) {
+  int n = 0;
+  while (n < cap && set[n])
+    n++;
+  return n;
+}
+
+/* Seeded pick with no immediate repeat for this speaker. */
+static const char *pick_line(const char *const *set, int cap, int speaker) {
+  int n = count_lines(set, cap);
+  if (n <= 0)
+    return NULL;
+  int pick = (int)(rng_next() % (unsigned)n);
+  if (n > 1 && pick == s_last_line[speaker])
+    pick = (pick + 1) % n;
+  s_last_line[speaker] = pick;
+  return set[pick];
+}
+
+/* Package hand-off chatter: one of BREN's lines in the textbox. */
+static void start_keeper_talk(void) {
+  const Dialogue *d = depot_dialogue();
+  const char *line = pick_line(d->lines_idle, 4, RESIDENT_COUNT);
+  const char *lines[1] = {line};
+  dialog_start(d->name, lines, 1);
+}
+
 /*
- * Conversation lines for the pickup/delivery beats. The resident names and the
- * data-driven tables arrive with the NPC conversation system (island1-9fm3);
- * these static buffers outlive dialog_start(), which only stores pointers.
+ * Proximity talk and the delivery hand-off. Runs after quest_tick and before
+ * dialog_update, so the opening E is consumed by the textbox the same frame.
+ * Only on foot, only within TALK_RANGE of the nearest resident, and never
+ * while a box is already open.
  */
-static char s_dialog_lines[DIALOG_MAX_LINES][DIALOG_MAX_CHARS];
+static void npc_tick(void) {
+  if (s_delivery_pending && !dialog_active()) {
+    s_delivery_pending = 0;
+    s_quest = GAME_QUEST_DONE;
+    s_quest_timer = QUEST_DONE_TIME;
+    s_toast_timer = TOAST_TIME;
+    s_delivered++;
+  }
+
+  s_talk_house = -1;
+  if (s_mode != MODE_FOOT || dialog_active())
+    return;
+
+  const float *p = s_player.pos;
+  float best = TALK_RANGE * TALK_RANGE;
+  for (int i = 0; i < HOUSE_COUNT; i++) {
+    float dx = p[0] - s_houses[i].resident[0];
+    float dz = p[2] - s_houses[i].resident[2];
+    float d2 = dx * dx + dz * dz;
+    if (d2 <= best) {
+      best = d2;
+      s_talk_house = i;
+    }
+  }
+  if (s_talk_house < 0 || !input_pressed(ACT_INTERACT))
+    return;
+
+  const Dialogue *d = resident_dialogue(s_talk_house);
+  const char *line;
+  if (s_talk_house == s_target_house && s_quest == GAME_QUEST_CARRY) {
+    line = pick_line(d->lines_delivery, 4, s_talk_house);
+    s_delivery_pending = 1;
+  } else if (s_talk_house == s_target_house &&
+             s_quest == GAME_QUEST_REQUEST) {
+    line = pick_line(d->lines_no_package, 3, s_talk_house);
+  } else {
+    line = pick_line(d->lines_idle, 4, s_talk_house);
+  }
+  const char *lines[1] = {line};
+  dialog_start(d->name, lines, 1);
+}
 
 static void quest_tick(float dt) {
   const float *ap = active_pos();
@@ -185,36 +271,13 @@ static void quest_tick(float dt) {
     if (dx * dx + dz * dz <= QUEST_PICKUP_RANGE * QUEST_PICKUP_RANGE &&
         !dialog_active() && input_pressed(ACT_INTERACT)) {
       s_quest = GAME_QUEST_CARRY;
-      /* Hand-off chatter (island1-a2xf textbox; wording is 9fm3's to replace).
-       */
-      snprintf(s_dialog_lines[0], sizeof(s_dialog_lines[0]),
-               "PACKAGE FOR HOUSE %d. HEAVY ONE.", s_target_house + 1);
-      snprintf(s_dialog_lines[1], sizeof(s_dialog_lines[1]),
-               "DELIVER IT TO THE RESIDENT, THEN HURRY BACK.");
-      const char *lines[DIALOG_MAX_LINES] = {s_dialog_lines[0],
-                                             s_dialog_lines[1]};
-      dialog_start("DEPOT KEEPER", lines, 2);
+      start_keeper_talk(); /* BREN's hand-off voice (island1-9fm3). */
     }
-  } else if (s_quest == GAME_QUEST_CARRY) {
-    const float *rp = s_houses[s_target_house].resident;
-    float dx = ap[0] - rp[0];
-    float dz = ap[2] - rp[2];
-    if (dx * dx + dz * dz <= QUEST_DELIVER_RANGE * QUEST_DELIVER_RANGE &&
-        !dialog_active() && input_pressed(ACT_INTERACT)) {
-      s_quest = GAME_QUEST_DONE;
-      s_quest_timer = QUEST_DONE_TIME;
-      s_toast_timer = TOAST_TIME;
-      s_delivered++;
-      snprintf(s_dialog_lines[0], sizeof(s_dialog_lines[0]),
-               "MY PACKAGE! FINALLY!");
-      snprintf(s_dialog_lines[1], sizeof(s_dialog_lines[1]),
-               "THE ISLAND THANKS YOU, COURIER.");
-      const char *lines[DIALOG_MAX_LINES] = {s_dialog_lines[0],
-                                             s_dialog_lines[1]};
-      dialog_start("RESIDENT", lines, 2);
-    }
-  } else { /* GAME_QUEST_DONE */
-    s_quest_timer -= dt;
+  } else if (s_quest == GAME_QUEST_DONE) {
+    /* Hold the next request while a conversation is on screen. The delivery
+     * itself happens through npc_tick(): talk to the target on foot. */
+    if (!dialog_active())
+      s_quest_timer -= dt;
     if (s_quest_timer <= 0.0f)
       quest_new_request();
   }
@@ -411,6 +474,10 @@ void game_init(void) {
   s_delivered = 0;
   s_target_house = -1;
   s_toast_timer = 0.0f;
+  s_talk_house = -1;
+  s_delivery_pending = 0;
+  for (int i = 0; i < RESIDENT_COUNT + 1; i++)
+    s_last_line[i] = -1;
 
   /* Terrain must exist before anything snaps to the ground. */
   terrain_init(1337u);
@@ -680,7 +747,7 @@ void game_tick(float dt) {
   if (input_pressed(ACT_DEV_DEBUG))
     s_debug = !s_debug;
 
-  if (input_pressed(ACT_VEHICLE))
+  if (!dialog_active() && input_pressed(ACT_VEHICLE))
     toggle_vehicle();
 
   if (s_cam_mode == CAM_FLY) {
@@ -701,13 +768,16 @@ void game_tick(float dt) {
     float fly_throttle = (input_held(ACT_THROTTLE) ? 1.0f : 0.0f) -
                          (input_held(ACT_BRAKE) ? 1.0f : 0.0f);
     cam_move(&s_cam, (int)fly_throttle, (int)input_axis(AX_STEER), 0, dt);
-  } else if (s_mode == MODE_FOOT) {
-    walk_player(dt);
-  } else {
-    drive_car(dt);
+  } else if (!dialog_active()) {
+    /* A conversation freezes whoever the player controls (island1-9fm3). */
+    if (s_mode == MODE_FOOT)
+      walk_player(dt);
+    else
+      drive_car(dt);
   }
 
   quest_tick(dt);
+  npc_tick();
 
   /* Conversation typewriter + E advance/skip (island1-a2xf). Runs after the
    * quest logic so the press that opened a box is consumed, not reused. */
@@ -1219,8 +1289,8 @@ void game_render(float frame_dt) {
         r_text_2d(12, 76, 1.0f, buf, white);
       }
     } else if (s_quest == GAME_QUEST_CARRY) {
-      if (odist <= QUEST_DELIVER_RANGE)
-        r_text_2d(12, 76, 1.0f, "E DELIVER TO RESIDENT", white);
+      if (odist <= TALK_RANGE)
+        r_text_2d(12, 76, 1.0f, "E TALK TO DELIVER", white);
       else {
         snprintf(buf, sizeof(buf), "HOUSE %d  %.0fm", s_target_house + 1,
                  odist);
@@ -1232,6 +1302,32 @@ void game_render(float frame_dt) {
 
     if (s_quest != GAME_QUEST_DONE)
       draw_compass(white);
+
+    /* "E - TALK" over the nearest resident's head (island1-9fm3): project the
+     * head position through this frame's view/proj and drop the label just
+     * above it; hidden when behind the camera or off screen. */
+    if (s_mode == MODE_FOOT && !dialog_active() && s_talk_house >= 0) {
+      const float *rp = s_houses[s_talk_house].resident;
+      mat4 vp;
+      vec4 head = {rp[0], rp[1] + 2.05f, rp[2], 1.0f};
+      vec4 clip;
+      if (s_cam_mode == CAM_CHASE)
+        glm_mat4_mul(s_chase.view, s_chase.proj, vp);
+      else
+        glm_mat4_mul(s_cam.view, s_cam.proj, vp);
+      glm_mat4_mulv(vp, head, clip);
+      if (clip[3] > 0.0f) {
+        float nx = clip[0] / clip[3];
+        float ny = clip[1] / clip[3];
+        if (nx >= -1.0f && nx <= 1.0f && ny >= -1.0f && ny <= 1.0f) {
+          static const char prompt[] = "E - TALK";
+          int px = (int)((nx * 0.5f + 0.5f) * (float)s_view_w) -
+                   (int)(sizeof(prompt) - 1) * 4;
+          int py = (int)((1.0f - (ny * 0.5f + 0.5f)) * (float)s_view_h) - 14;
+          r_text_2d(px, py, 1.0f, prompt, white);
+        }
+      }
+    }
 
     /* Center toast that fades after a delivery. */
     if (s_toast_timer > 0.0f) {
