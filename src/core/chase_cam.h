@@ -20,6 +20,15 @@ typedef struct {
 void chase_cam_init(ChaseCam* c, const float car_pos[3], float heading);
 
 /*
+ * Re-aim at a new target without a cut (island1-38h3): the spring keeps the
+ * camera where it is and pulls it to the new framing, so any transition
+ * reads as a fast lerp instead of a jump. `from_pos` is the last rendered
+ * eye (NULL snaps into place: boot, before any camera exists).
+ */
+void chase_cam_transition(ChaseCam* c, const float car_pos[3], float heading,
+                          const float from_pos[3]);
+
+/*
  * Optional terrain-height callback (island1-qvn1): return a large negative value
  * off the map. The camera is kept at least a little above the ground so it does
  * not bury itself in a hill. Passing NULL disables the clamp, which is what the

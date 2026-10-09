@@ -27,6 +27,14 @@ GameMode game_mode(void);
 const float* game_player_pos(void);
 const float* game_vehicle_pos(void);
 
+/* Standing in the shallows or deeper (island1-7duk wading hook). */
+int game_player_in_water(void);
+
+/* Presentation pose, radians (island1-9gio): bank >0 leans the top left,
+ * pitch >0 is nose-up. Drive mode only; both read zero on foot. */
+float game_vehicle_bank(void);
+float game_vehicle_pitch(void);
+
 /* Teleport the parked car (spawn/reset/tests). Snaps it to the ground. */
 void game_place_vehicle(float x, float z, float heading);
 

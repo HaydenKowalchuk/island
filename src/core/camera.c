@@ -2,6 +2,7 @@
 
 #include <math.h>
 
+#include "chase_cam.h"
 #include "pi.h"
 
 #define CAM_DEFAULT_POS   ((vec3){ 0.0f, 2.0f, 8.0f })
@@ -95,7 +96,15 @@ void cam_update(FlyCam* cam, int width, int height) {
     /* glm_look() treats its second argument as a direction; use lookat. */
     glm_lookat(cam->pos, target, (vec3){ 0.0f, 1.0f, 0.0f }, cam->view);
 
-    /* cglm's glm_perspective takes the vertical FOV in radians. */
-    glm_perspective(glm_rad(cam->fov), (float)width / (float)height, cam->znear, cam->zfar, cam->proj);
+    /*
+     * cglm's glm_perspective takes the vertical FOV in radians. cam->fov is
+     * referenced to 16:9 like the chase camera (island1-t21d): derive the
+     * effective vertical FOV so the dev fly cam frames the same horizontal
+     * view as the game camera on a 4:3 Dreamcast.
+     */
+    float aspect =
+        (height > 0) ? (float)width / (float)height : (16.0f / 9.0f);
+    glm_perspective(chase_vfov_for_aspect(cam->fov, aspect), aspect,
+                    cam->znear, cam->zfar, cam->proj);
     glm_mat4_mul(cam->proj, cam->view, cam->viewproj);
 }

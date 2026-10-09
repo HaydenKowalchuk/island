@@ -51,7 +51,9 @@ static Mesh s_parcel;
  */
 static ChaseCam s_chase;
 static CarState s_veh;
-static float s_bank = 0.0f; /* radians; leans into the turn */
+static float s_bank = 0.0f;  /* radians; leans into the turn */
+static float s_pitch = 0.0f; /* radians nose-up; accel trim + terrain (island1-9gio) */
+static float s_prev_speed_ms = 0.0f; /* last tick, for the accel that drives pitch */
 
 /* Active camera position, sampled each render for prop LOD (island1-1927). */
 static float s_cam_pos[3];
@@ -63,9 +65,15 @@ static float s_cam_pos[3];
  */
 typedef enum { MODE_DRIVE, MODE_FOOT } PlayerMode;
 
-#define FOOT_SPEED 4.5f
-#define FOOT_TURN 6.0f
-#define FOOT_WADE -0.8f /* ground below this is too deep to walk */
+#define FOOT_SPEED 4.5f  /* full-pace walk, m/s; the car stays the fast option */
+#define FOOT_ACCEL 8.0f  /* speed ease rate, 1/s (island1-7duk) */
+#define FOOT_TURN 8.0f   /* heading ease rate, 1/s; faces the move direction */
+#define FOOT_WADE -0.8f  /* ground below this is too deep to walk */
+#define FOOT_WALK_MIN 0.05f /* stick deflection below this keeps last heading */
+#define WALK_RADIUS 0.4f    /* on-foot collider, m (island1-7duk) */
+#define WALK_HOUSE_R 2.2f   /* house wall circle around the origin */
+#define WALK_POST_R 0.2f    /* depot sign post */
+#define WALK_POST_OX 1.6f   /* post offset from the depot origin, +x */
 #define VEHICLE_REACH 3.5f
 #define VEHICLE_EXIT_OFFSET 2.6f
 
@@ -73,7 +81,9 @@ typedef struct {
   vec3 pos;
   float heading;
   float speed_kmh;
+  float walk_speed; /* m/s, eased toward the input target (island1-7duk) */
   float walk_phase;
+  int in_water; /* standing in or wading shallows (bob/foam hook) */
 } PlayerState;
 
 static PlayerMode s_mode = MODE_DRIVE;
@@ -562,11 +572,15 @@ void game_init(void) {
   s_player.heading = 0.0f;
   s_player.speed_kmh = 0.0f;
   s_player.walk_phase = 0.0f;
+  s_player.walk_speed = 0.0f;
+  s_player.in_water = 0;
   s_mode = MODE_DRIVE;
 
   /* Start parked on the main island, facing the resident. */
   car_init(&s_veh, CAR_START_X, CAR_START_Z, 0.0f);
   s_bank = 0.0f;
+  s_pitch = 0.0f;
+  s_prev_speed_ms = 0.0f;
   {
     float g = terrain_height_at(s_veh.pos[0], s_veh.pos[2]);
     s_veh.pos[1] = (g > 0.0f) ? g + 0.25f : 0.0f;
@@ -624,7 +638,15 @@ GameMode game_mode(void) {
 
 const float *game_player_pos(void) { return s_player.pos; }
 
+/* Standing in the shallows or deeper (island1-7duk wading hook). */
+int game_player_in_water(void) { return s_player.in_water; }
+
 const float *game_vehicle_pos(void) { return s_veh.pos; }
+
+/* Presentation pose, radians (island1-9gio): bank >0 leans the top left,
+ * pitch >0 is nose-up. Drive mode only; both read zero on foot. */
+float game_vehicle_bank(void) { return s_bank; }
+float game_vehicle_pitch(void) { return s_pitch; }
 
 GameQuestPhase game_quest_phase(void) {
   if (quest_paused())
@@ -715,6 +737,8 @@ const float *game_beacon_pos(void) { return active_target(); }
 void game_place_vehicle(float x, float z, float heading) {
   car_init(&s_veh, x, z, heading);
   s_bank = 0.0f;
+  s_pitch = 0.0f;
+  s_prev_speed_ms = 0.0f;
 
   float g = terrain_height_at(x, z);
   s_veh.pos[1] = (g > 0.0f) ? g + 0.25f : 0.0f;
@@ -724,15 +748,19 @@ void game_place_vehicle(float x, float z, float heading) {
   chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
 }
 
-/* Teleport the walking player (spawn/reset/tests). Snaps to the ground and
- * switches to foot mode if the car was active (island1-f9x2). */
+/* Teleport the walking player (spawn/reset/tests). Snaps to the ground,
+ * faces +z for a deterministic camera-relative basis, and switches to foot
+ * mode if the car was active (island1-f9x2). */
 void game_place_player(float x, float z) {
   float g = terrain_height_at(x, z);
   s_player.pos[0] = x;
   s_player.pos[1] = (g > 0.0f) ? g + 0.05f : 0.0f;
   s_player.pos[2] = z;
+  s_player.heading = 0.0f;
   s_player.speed_kmh = 0.0f;
   s_player.walk_phase = 0.0f;
+  s_player.walk_speed = 0.0f;
+  s_player.in_water = (g < 0.0f);
   if (s_mode != MODE_FOOT) {
     s_mode = MODE_FOOT;
     apply_cam_framing();
@@ -744,9 +772,13 @@ void game_set_hud(int on) { s_hud = on ? 1 : 0; }
 
 int game_hud_enabled(void) { return s_hud; }
 
-/* Presentation-only lean; the physics lives in car.c (island1-9n0n). */
+/* Presentation-only pose; the physics lives in car.c (island1-9n0n). */
 #define CAR_BANK_MAX 0.78f /* radians, ~45 deg lean (island1-9gio) */
 #define CAR_BANK_RATE 4.0f
+#define CAR_PITCH_MAX 0.12f  /* ~7 deg trim under hard accel (island1-9gio) */
+#define CAR_PITCH_RATE 5.0f
+#define CAR_TILT_GAIN 0.5f   /* fraction of the terrain slope added to pose */
+#define CAR_TILT_OFF 1.2f    /* terrain sample offset fore/aft and abeam, m */
 
 static void drive_car(float dt) {
   /* Analog triggers feed the axes; the digital actions stay as a fallback. */
@@ -768,8 +800,45 @@ static void drive_car(float dt) {
   float speed01 = (s_veh.speed_kmh / 3.6f) / CAR_MAX_FWD;
   if (speed01 > 1.0f)
     speed01 = 1.0f;
-  float bank_target = steer * CAR_BANK_MAX * speed01;
+
+  /*
+   * Terrain-normal tilt (island1-9gio): sample fore/aft and abeam so the hull
+   * skims the slope instead of holding a rigid horizon. Over water the surface
+   * is flat, so both tilts stay zero. Right is (cos h, -sin h) for forward
+   * (sin h, cos h); a higher right side rolls the top left (same sign family
+   * as steering lean), a higher nose pitches the nose up.
+   */
+  float tilt_pitch = 0.0f;
+  float tilt_roll = 0.0f;
+  if (g2 > 0.0f) {
+    float sh = sinf(s_veh.heading);
+    float ch = cosf(s_veh.heading);
+    float gh_n = terrain_height_at(s_veh.pos[0] + sh * CAR_TILT_OFF,
+                                   s_veh.pos[2] + ch * CAR_TILT_OFF);
+    float gh_s = terrain_height_at(s_veh.pos[0] - sh * CAR_TILT_OFF,
+                                   s_veh.pos[2] - ch * CAR_TILT_OFF);
+    float gh_r = terrain_height_at(s_veh.pos[0] + ch * CAR_TILT_OFF,
+                                   s_veh.pos[2] - sh * CAR_TILT_OFF);
+    float gh_l = terrain_height_at(s_veh.pos[0] - ch * CAR_TILT_OFF,
+                                   s_veh.pos[2] + sh * CAR_TILT_OFF);
+    tilt_pitch = atan2f(gh_n - gh_s, 2.0f * CAR_TILT_OFF) * CAR_TILT_GAIN;
+    tilt_roll = atan2f(gh_r - gh_l, 2.0f * CAR_TILT_OFF) * CAR_TILT_GAIN;
+  }
+
+  float bank_target = steer * CAR_BANK_MAX * speed01 + tilt_roll;
   s_bank += (bank_target - s_bank) * (1.0f - expf(-CAR_BANK_RATE * dt));
+
+  /* Pitch under longitudinal accel: nose-up on the throttle, nose-down on the
+   * brakes, easing out as speed settles (island1-9gio). */
+  float speed_ms = s_veh.speed_kmh / 3.6f;
+  float accel01 = (speed_ms - s_prev_speed_ms) / (dt * CAR_MAX_FWD);
+  s_prev_speed_ms = speed_ms;
+  if (accel01 > 1.0f)
+    accel01 = 1.0f;
+  if (accel01 < -1.0f)
+    accel01 = -1.0f;
+  float pitch_target = accel01 * CAR_PITCH_MAX + tilt_pitch;
+  s_pitch += (pitch_target - s_pitch) * (1.0f - expf(-CAR_PITCH_RATE * dt));
 
   /* Record the stern rather than the car's origin, so the wake trails the hull
    * instead of starting underneath (or ahead of) it. Forward is (sin h, cos h),
@@ -782,6 +851,8 @@ static void drive_car(float dt) {
   if (input_pressed(ACT_DEV_RESET)) {
     car_init(&s_veh, 0.0f, 0.0f, 0.0f);
     s_bank = 0.0f;
+  s_pitch = 0.0f;
+  s_prev_speed_ms = 0.0f;
     trail_clear();
     chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
   }
@@ -827,6 +898,8 @@ static void toggle_vehicle(void) {
       s_player.heading = s_veh.heading;
       s_player.speed_kmh = 0.0f;
       s_player.walk_phase = 0.0f;
+  s_player.walk_speed = 0.0f;
+  s_player.in_water = 0;
       glm_vec3_zero(s_veh.vel);
       s_veh.yaw_rate = 0.0f;
       s_veh.speed_kmh = 0.0f;
@@ -853,34 +926,98 @@ static void toggle_vehicle(void) {
 }
 
 /*
- * On-foot walking (island1-7duk, minimal): W/S walk along the facing direction,
- * A/D turn. The player follows the terrain height and is blocked by deep water
- * (shallow water can be waded at sea level).
+ * On-foot walking (island1-7duk): WASD is camera-relative, the body eases
+ * around to face the move direction, speed lerps in and out, shallows wade at
+ * half pace (in_water set for the future bob/foam hook) and deep water stops
+ * you. Houses and the depot post block with a circle push-out; prop colliders
+ * (trees, rocks) arrive with island1-mvpl / island1-md2b.
  */
+static float wrap_pi(float a); /* defined with the compass, below */
+
+/* Circle push-out against the fixed building colliders. */
+static void walk_collide(void) {
+  float dx, dz;
+  for (int i = 0; i < HOUSE_COUNT; i++) {
+    dx = s_player.pos[0] - s_houses[i].base[0];
+    dz = s_player.pos[2] - s_houses[i].base[2];
+    float rr = WALK_HOUSE_R + WALK_RADIUS;
+    float d2 = dx * dx + dz * dz;
+    if (d2 < rr * rr && d2 > 1e-8f) {
+      float d = sqrtf(d2);
+      float k = (rr - d) / d;
+      s_player.pos[0] += dx * k;
+      s_player.pos[2] += dz * k;
+    }
+  }
+  /* The depot pad itself is walkable; only the sign post is solid. */
+  dx = s_player.pos[0] - (s_depot[0] + WALK_POST_OX);
+  dz = s_player.pos[2] - s_depot[2];
+  float rr = WALK_POST_R + WALK_RADIUS;
+  float d2 = dx * dx + dz * dz;
+  if (d2 < rr * rr && d2 > 1e-8f) {
+    float d = sqrtf(d2);
+    float k = (rr - d) / d;
+    s_player.pos[0] += dx * k;
+    s_player.pos[2] += dz * k;
+  }
+}
+
 static void walk_player(float dt) {
   float throttle =
       fmaxf(input_axis(AX_THROTTLE), input_held(ACT_THROTTLE) ? 1.0f : 0.0f);
   float brake =
       fmaxf(input_axis(AX_BRAKE), input_held(ACT_BRAKE) ? 1.0f : 0.0f);
-  float move = throttle - brake;
   float steer = input_axis(AX_STEER);
 
-  s_player.heading -= steer * FOOT_TURN * dt;
+  /* Camera-relative basis: forward is the eased chase heading, right is 90
+   * degrees clockwise of it on the XZ plane. The chase heading only advances
+   * in game_render, so within the tick it is last frame's -- fine for input. */
+  float cam_h = s_chase.heading_lag;
+  float fwd_x = sinf(cam_h);
+  float fwd_z = cosf(cam_h);
+  float rgt_x = cosf(cam_h);
+  float rgt_z = -sinf(cam_h);
 
-  float v = move * FOOT_SPEED;
-  float nx = s_player.pos[0] + sinf(s_player.heading) * v * dt;
-  float nz = s_player.pos[2] + cosf(s_player.heading) * v * dt;
-  float g = terrain_height_at(nx, nz);
-
-  if (g > FOOT_WADE) {
-    s_player.pos[0] = nx;
-    s_player.pos[2] = nz;
-    s_player.pos[1] = (g > 0.0f) ? g + 0.05f : 0.0f;
-    s_player.walk_phase += fabsf(move) * dt * 9.0f;
+  float mx = fwd_x * (throttle - brake) + rgt_x * steer;
+  float mz = fwd_z * (throttle - brake) + rgt_z * steer;
+  float mlen = sqrtf(mx * mx + mz * mz);
+  if (mlen > 1.0f) { /* analog corner: keep the diagonal from speeding up */
+    mx /= mlen;
+    mz /= mlen;
+    mlen = 1.0f;
   }
-  /* else: deep water ahead, stand still. */
 
-  s_player.speed_kmh = fabsf(v) * 3.6f;
+  /* Target speed: full pace on land, half in the shallows, blocked deep. */
+  float target = 0.0f;
+  if (mlen > FOOT_WALK_MIN) {
+    float nx = s_player.pos[0] + (mx / mlen) * 0.5f;
+    float nz = s_player.pos[2] + (mz / mlen) * 0.5f;
+    float g_ahead = terrain_height_at(nx, nz);
+    if (g_ahead > FOOT_WADE)
+      target = mlen * FOOT_SPEED * (g_ahead < 0.0f ? 0.5f : 1.0f);
+    /* else: deep water ahead, stand still. */
+
+    /* Face the move direction; keep the last heading when idle. */
+    float want = atan2f(mx, mz);
+    float dh = wrap_pi(want - s_player.heading);
+    s_player.heading += dh * (1.0f - expf(-FOOT_TURN * dt));
+  }
+  s_player.walk_speed += (target - s_player.walk_speed) *
+                         (1.0f - expf(-FOOT_ACCEL * dt));
+
+  if (mlen > FOOT_WALK_MIN && s_player.walk_speed > 0.01f) {
+    float inv = 1.0f / mlen;
+    s_player.pos[0] += (mx * inv) * s_player.walk_speed * dt;
+    s_player.pos[2] += (mz * inv) * s_player.walk_speed * dt;
+    s_player.walk_phase += (s_player.walk_speed / FOOT_SPEED) * dt * 9.0f;
+  }
+
+  walk_collide();
+
+  float g = terrain_height_at(s_player.pos[0], s_player.pos[2]);
+  s_player.pos[1] = (g > 0.0f) ? g + 0.05f : 0.0f;
+  s_player.in_water = (g < 0.0f);
+  s_player.speed_kmh = s_player.walk_speed * 3.6f;
 }
 
 void game_tick(float dt) {
@@ -1126,7 +1263,12 @@ static void emit_ocean(float t) {
  */
 static void emit_car(float t) {
   r_pass(R_PASS_VEHICLE);
-  const float bob = 0.05f * sinf(t * 1.6f);
+  /* Bob settles as speed climbs so a full-throttle run reads planted
+   * (island1-9gio). */
+  float speed01 = (s_veh.speed_kmh / 3.6f) / CAR_MAX_FWD;
+  if (speed01 > 1.0f)
+    speed01 = 1.0f;
+  const float bob = 0.05f * (1.0f - 0.5f * speed01) * sinf(t * 1.6f);
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 
   mat4 world;
@@ -1134,6 +1276,9 @@ static void emit_car(float t) {
   glm_translate(world, (vec3){s_veh.pos[0], s_veh.pos[1] + bob, s_veh.pos[2]});
   glm_rotate(world, s_veh.heading, (vec3){0.0f, 1.0f, 0.0f});
   glm_rotate(world, s_bank, (vec3){0.0f, 0.0f, 1.0f});
+  /* s_pitch is nose-up positive; +X is the right axis, whose positive
+   * rotation drops the nose, so negate. */
+  glm_rotate(world, -s_pitch, (vec3){1.0f, 0.0f, 0.0f});
 
   r_mesh(&s_car, (const float *)world, white);
 }
@@ -1593,7 +1738,9 @@ void game_render(float frame_dt) {
   memcpy(pass_d, fr->pass_draws, sizeof(pass_d));
 
   if (s_debug) {
-    int x = s_view_w - 160;
+    /* Right-anchored; 180px keeps the longest line inside a 640x4:3 frame
+     * (island1-t21d safe-area audit). */
+    int x = s_view_w - 180;
     int y = 10;
 
     snprintf(buf, sizeof(buf), "DRAWS %d  VERTS %d", fr->stat_draws,
