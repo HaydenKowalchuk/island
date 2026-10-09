@@ -10,7 +10,7 @@
  *   SHIFT boost                  E     interact          F     enter/exit car
  *   RMB drag  look               C     dev fly cam       F3    debug stats
  *   ESC       quit                R     dev reset
- *   Menu (before play): UP/DOWN or W/S move, ENTER/SPACE confirm,
+ *   Menu (before play): UP/DOWN or W/S move, ENTER/SPACE or W start,
  *   BACKSPACE back; any key skips the intro.
  */
 

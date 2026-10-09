@@ -108,8 +108,9 @@ void menu_tick(float dt) {
             intro_next(); /* one card per press; edges only, never held */
         break;
     case MENU_SCREEN_MAIN:
-        /* Item selection/nav arrive with island1-lb8c; confirm starts play. */
-        if (input_pressed(ACT_MENU_CONFIRM))
+        /* Confirm or the throttle starts play — the attract hint invites the
+         * throttle. Item selection/nav arrive with island1-lb8c. */
+        if (input_pressed(ACT_MENU_CONFIRM) || input_pressed(ACT_THROTTLE))
             s_screen = MENU_SCREEN_PLAY;
         break;
     case MENU_SCREEN_CONTROLS:
@@ -185,7 +186,17 @@ void menu_render(void) {
         return;
     }
 
-    /* Menu UI arrives with island1-lb8c. */
+    /* Attract hint (island1-7u5i): pulsing invite above the bottom edge;
+     * the proper menu items arrive with island1-lb8c. */
+    if (s_screen == MENU_SCREEN_MAIN) {
+        const RenderFrame *fr = r_frame();
+        float a = 0.55f + 0.25f * sinf(s_menu_time * 2.5f);
+        const float dim[4] = {1.0f, 1.0f, 1.0f, a};
+        static const char hint[] = "PRESS THROTTLE TO START";
+        int hw = (int)(8.0f * 1.5f * (float)(sizeof(hint) - 1));
+        r_text_2d((fr->width - hw) / 2, fr->height - 56, 1.5f, hint, dim);
+        return;
+    }
 }
 
 void menu_cam_update(int width, int height) {
