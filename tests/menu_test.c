@@ -13,6 +13,11 @@
 #include "render.h"
 #include "terrain.h"
 
+static float dist3(const float* a, const float* b) {
+    float dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+    return sqrtf(dx * dx + dy * dy + dz * dz);
+}
+
 int main(void) {
   game_init();
 

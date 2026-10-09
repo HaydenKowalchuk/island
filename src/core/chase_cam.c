@@ -75,6 +75,24 @@ void chase_cam_init(ChaseCam* c, const float car_pos[3], float heading) {
     glm_mat4_identity(c->proj);
 }
 
+void chase_cam_transition(ChaseCam* c, const float car_pos[3], float heading,
+                          const float from_pos[3]) {
+    c->heading_lag = heading;
+    c->fov = CHASE_FOV_BASE;
+    if (from_pos) {
+        /* Seed the spring from where the camera is now; the update pulls it
+         * to the new framing, so the transition reads as a fast lerp. */
+        c->pos[0] = from_pos[0];
+        c->pos[1] = from_pos[1];
+        c->pos[2] = from_pos[2];
+        glm_vec3_zero(c->vel);
+    } else {
+        place_behind(c, car_pos, heading);
+    }
+    glm_mat4_identity(c->view);
+    glm_mat4_identity(c->proj);
+}
+
 void chase_cam_update(ChaseCam* c, const float car_pos[3], float heading,
                       float speed_kmh, int width, int height, float dt) {
     if (dt <= 0.0f)

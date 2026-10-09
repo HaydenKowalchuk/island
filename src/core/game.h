@@ -26,6 +26,8 @@ typedef enum { GAME_MODE_DRIVE, GAME_MODE_FOOT } GameMode;
 GameMode game_mode(void);
 const float* game_player_pos(void);
 const float* game_vehicle_pos(void);
+/* Last rendered active-camera eye (attract/chase/fly); test/F3 use. */
+const float* game_cam_pos(void);
 
 /* Standing in the shallows or deeper (island1-7duk wading hook). */
 int game_player_in_water(void);

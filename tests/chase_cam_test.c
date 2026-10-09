@@ -109,6 +109,47 @@ int main(void) {
         return 1;
     }
 
+    /*
+     * 5. Transition without a cut (island1-38h3): the spring seeds from
+     *    `from_pos` (NULL snaps, like init) and pulls to the framing; the
+     *    distance to the target shrinks monotonically (no overshoot).
+     */
+    ChaseCam tr;
+    const float from[3] = {0.0f, 3.0f, -30.0f};
+    chase_cam_transition(&tr, car, 0.0f, from);
+    float seeded = sqrtf(tr.pos[0] * tr.pos[0] + tr.pos[1] * tr.pos[1] +
+                         (tr.pos[2] + 30.0f) * (tr.pos[2] + 30.0f));
+    if (seeded > 0.001f || fabsf(tr.heading_lag) > 1e-6f || vel_norm(&tr) > 1e-6f) {
+        printf("FAIL: transition seed pos=(%.2f, %.2f, %.2f) lag=%.3f\n",
+               tr.pos[0], tr.pos[1], tr.pos[2], tr.heading_lag);
+        return 1;
+    }
+    float prev_d = 1.0e9f;
+    float max_rise = 0.0f;
+    for (int i = 0; i < 300; i++) {
+        chase_cam_update(&tr, car, 0.0f, 0.0f, 320, 240, TICK);
+        float d = sqrtf(tr.pos[0] * tr.pos[0] +
+                        (tr.pos[1] - 3.2f) * (tr.pos[1] - 3.2f) +
+                        (tr.pos[2] + 7.0f) * (tr.pos[2] + 7.0f));
+        if (d > prev_d && d - prev_d > max_rise)
+            max_rise = d - prev_d;
+        prev_d = d;
+    }
+    if (max_rise > 0.01f || prev_d > 0.5f) {
+        printf("FAIL: transition lerp rise=%.4f final_d=%.3f\n", max_rise,
+               prev_d);
+        return 1;
+    }
+
+    /* NULL from_pos snaps into place, identical to init. */
+    ChaseCam snap;
+    chase_cam_transition(&snap, car, 0.0f, NULL);
+    if (fabsf(snap.pos[2] + 7.0f) > 0.25f || fabsf(snap.pos[1] - 3.2f) > 0.25f) {
+        printf("FAIL: NULL transition snap (%.2f, %.2f, %.2f)\n", snap.pos[0],
+               snap.pos[1], snap.pos[2]);
+        return 1;
+    }
+
     printf("chase-cam: rest_vel=%.4f settle=%.3fs fov %.1f->%.1f z %.1f->%.1f "
            "hfov %.3f/%.3f/%.3f\n",
            rest_vel, settle_time, slow.fov, fast.fov, slow.pos[2], fast.pos[2],

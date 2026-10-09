@@ -417,6 +417,10 @@ static void trail_push(const float *pos) {
 typedef enum { CAM_CHASE, CAM_FLY } CamMode;
 static CamMode s_cam_mode = CAM_CHASE;
 
+/* Front-end screen seen by the last tick; a change to PLAY seeds the chase
+ * spring from the current eye so the handover lerps (island1-38h3). */
+static MenuScreen s_front_prev = MENU_SCREEN_INTRO;
+
 /* Gameplay HUD visibility (island1-fovq); toggled by game_set_hud(). */
 static int s_hud = 1;
 static int s_inv_open = 0; /* inventory overlay (island1-iim2) */
@@ -545,6 +549,7 @@ static void apply_cam_framing(void);
 void game_init(void) {
   menu_init(); /* boot into the intro (island1-tpz8) */
   menu_set_backdrop(MENU_ANCHOR_X, MENU_ANCHOR_Z, MENU_LOOK_X, MENU_LOOK_Z);
+  s_front_prev = menu_screen();
   cam_init(&s_cam);
   s_time = 0.0f;
   s_rng = 0x1234567u;
@@ -642,6 +647,9 @@ const float *game_player_pos(void) { return s_player.pos; }
 int game_player_in_water(void) { return s_player.in_water; }
 
 const float *game_vehicle_pos(void) { return s_veh.pos; }
+
+/* Last rendered active-camera eye (attract/chase/fly); test/F3 use. */
+const float *game_cam_pos(void) { return s_cam_pos; }
 
 /* Presentation pose, radians (island1-9gio): bank >0 leans the top left,
  * pitch >0 is nose-up. Drive mode only; both read zero on foot. */
@@ -745,7 +753,7 @@ void game_place_vehicle(float x, float z, float heading) {
   s_veh.on_water = (g <= 0.0f);
 
   trail_clear();
-  chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
+  chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, s_cam_pos);
 }
 
 /* Teleport the walking player (spawn/reset/tests). Snaps to the ground,
@@ -764,7 +772,7 @@ void game_place_player(float x, float z) {
   if (s_mode != MODE_FOOT) {
     s_mode = MODE_FOOT;
     apply_cam_framing();
-    chase_cam_init(&s_chase, s_player.pos, s_player.heading);
+    chase_cam_transition(&s_chase, s_player.pos, s_player.heading, s_cam_pos);
   }
 }
 
@@ -854,7 +862,7 @@ static void drive_car(float dt) {
   s_pitch = 0.0f;
   s_prev_speed_ms = 0.0f;
     trail_clear();
-    chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
+    chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, s_cam_pos);
   }
 }
 
@@ -906,7 +914,7 @@ static void toggle_vehicle(void) {
       trail_clear();
       s_mode = MODE_FOOT;
       apply_cam_framing();
-      chase_cam_init(&s_chase, s_player.pos, s_player.heading);
+      chase_cam_transition(&s_chase, s_player.pos, s_player.heading, s_cam_pos);
       return;
     }
   } else {
@@ -921,7 +929,7 @@ static void toggle_vehicle(void) {
     s_veh.speed_kmh = 0.0f;
     trail_clear();
     apply_cam_framing();
-    chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
+    chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, s_cam_pos);
   }
 }
 
@@ -1030,7 +1038,21 @@ void game_tick(float dt) {
    * the rules below. The world keeps breathing while gameplay waits (waves
    * and bob read s_time), which is what keeps the menu backdrop alive. */
   menu_tick(dt);
-  if (menu_screen() != MENU_SCREEN_PLAY)
+  MenuScreen front = menu_screen();
+  if (front != s_front_prev) {
+    /* Camera transitions must lerp, never cut (island1-38h3): entering PLAY
+     * seeds the chase spring from wherever the camera is now (s_cam_pos, the
+     * last rendered eye — the attract view during the menu handover). */
+    if (front == MENU_SCREEN_PLAY && s_cam_mode == CAM_CHASE) {
+      if (s_mode == MODE_FOOT)
+        chase_cam_transition(&s_chase, s_player.pos, s_player.heading,
+                             s_cam_pos);
+      else
+        chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, s_cam_pos);
+    }
+    s_front_prev = front;
+  }
+  if (front != MENU_SCREEN_PLAY)
     return;
 
   if (input_pressed(ACT_DEV_CAM)) {
@@ -1040,9 +1062,10 @@ void game_tick(float dt) {
     else {
       apply_cam_framing();
       if (s_mode == MODE_FOOT)
-        chase_cam_init(&s_chase, s_player.pos, s_player.heading);
+        chase_cam_transition(&s_chase, s_player.pos, s_player.heading,
+                             s_cam_pos);
       else
-        chase_cam_init(&s_chase, s_veh.pos, s_veh.heading);
+        chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, s_cam_pos);
     }
   }
 
@@ -1553,6 +1576,9 @@ void game_render(float frame_dt) {
      * the gameplay cameras stay parked until play resumes. */
     menu_cam_update(s_view_w, s_view_h);
     r_camera(menu_cam_view(), menu_cam_proj());
+    /* The mirror must see the camera that actually rendered this frame, so a
+     * handover seeds from the attract eye (island1-38h3). */
+    menu_cam_eye(s_cam_pos);
   } else if (s_cam_mode == CAM_CHASE) {
     if (s_mode == MODE_FOOT)
       chase_cam_update(&s_chase, s_player.pos, s_player.heading,
@@ -1561,15 +1587,16 @@ void game_render(float frame_dt) {
       chase_cam_update(&s_chase, s_veh.pos, s_veh.heading, s_veh.speed_kmh,
                        s_view_w, s_view_h, frame_dt);
     r_camera((const float *)s_chase.view, (const float *)s_chase.proj);
+    s_cam_pos[0] = s_chase.pos[0];
+    s_cam_pos[1] = s_chase.pos[1];
+    s_cam_pos[2] = s_chase.pos[2];
   } else {
     cam_update(&s_cam, s_view_w, s_view_h);
     r_camera((const float *)s_cam.view, (const float *)s_cam.proj);
+    s_cam_pos[0] = s_cam.pos[0];
+    s_cam_pos[1] = s_cam.pos[1];
+    s_cam_pos[2] = s_cam.pos[2];
   }
-
-  const float *cam = (s_cam_mode == CAM_CHASE) ? s_chase.pos : s_cam.pos;
-  s_cam_pos[0] = cam[0];
-  s_cam_pos[1] = cam[1];
-  s_cam_pos[2] = cam[2];
 
   emit_sky();
   emit_ocean(s_time);

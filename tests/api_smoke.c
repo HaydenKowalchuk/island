@@ -115,10 +115,13 @@ int main(void) {
     printf("api-smoke: hud draws on=%d off=%d scene=%d\n", hud_on, hud_off,
            scene_off);
 
-    /* Prop LOD (island1-1927): a far camera culls all distant props. */
+    /* Prop LOD (island1-1927): a far camera culls all distant props. The
+     * camera transition lerps (island1-38h3), so run frames until the spring
+     * has carried the camera out to the teleport target. */
     int props_near = f->pass_draws[R_PASS_PROPS];
     game_place_vehicle(-200.0f, -200.0f, 0.0f);
-    game_render(1.0f / 60.0f);
+    for (int i = 0; i < 300; i++)
+        game_render(1.0f / 60.0f);
     int props_far = f->pass_draws[R_PASS_PROPS];
     int veh_far = f->pass_verts[R_PASS_VEHICLE];
     printf("api-smoke: lod props near=%d far=%d veh=%d\n", props_near, props_far,
