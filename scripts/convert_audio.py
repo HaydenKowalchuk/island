@@ -12,7 +12,10 @@ formats the backends load:
              with the same flags wipeout-dc's HOWTO uses: -n -i -t
 
   PSP (island1-ym91):
-    sfx   -> the WAV masters, copied verbatim (resident in RAM; ~tens of KB)
+    sfx   -> mono 16-bit WAV, 44.1 kHz (downmixed from the stereo masters),
+             resident in RAM (~tens of KB each). Normalizing to mono here
+             keeps the PSP mixer's hot loop single-sample-per-frame; the
+             masters stay untouched.
     music -> 128 kbps MP3, 44.1 kHz stereo (lame). sceMp3 decodes on the Media
              Engine; a 1-minute track is ~1 MB vs ~10 MB as WAV, and streams
              from UMD without stalling the mixer.
@@ -139,11 +142,23 @@ def to_music_mp3(src_wav, dst_mp3, lame):
           f"{PSP_MP3_RATE} Hz stereo)")
 
 
-def copy_sfx_wav(src_wav, dst_wav):
-    """PSP SFX stay as WAV masters, resident in RAM (tens of KB each)."""
+def to_sfx_wav_mono(src_wav, dst_wav):
+    """PSP SFX: downmix masters (stereo or mono) to mono 16-bit WAV, resident
+    in RAM. Masters stay untouched; normalizing to mono here keeps the PSP
+    mixer's hot loop single-sample-per-frame. Rate is kept (44.1 kHz ==
+    PSP_OUT_RATE, so the mixer's voice_step is a no-op resample)."""
+    rate, samples = read_wav_mono16(src_wav)
     dst_wav.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src_wav, dst_wav)
-    print(f"  {dst_wav.name}: {dst_wav.stat().st_size} bytes (WAV, resident)")
+    if sys.byteorder == "big":
+        samples = array("h", samples)
+        samples.byteswap()
+    with wave.open(str(dst_wav), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(samples.tobytes())
+    print(f"  {dst_wav.name}: {dst_wav.stat().st_size} bytes "
+          f"(mono WAV {rate} Hz, resident)")
 
 
 def default_src():
@@ -175,7 +190,7 @@ def main():
         lame = os.environ.get("LAME", LAME_DEFAULT)
         if sfx_dir.is_dir():
             for wav in sorted(sfx_dir.glob("*.wav")):
-                copy_sfx_wav(wav, args.out / "audio" / "sfx" / f"{wav.stem}.wav")
+                to_sfx_wav_mono(wav, args.out / "audio" / "sfx" / f"{wav.stem}.wav")
         if music_dir.is_dir():
             for wav in sorted(music_dir.glob("*.wav")):
                 to_music_mp3(wav, args.out / "audio" / "music" /

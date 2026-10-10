@@ -112,15 +112,18 @@ static int resolve_path(const char* relpath, const char* suffix, char* out, int 
   return psp_asset_path(rel, out, out_len) ? 0 : -1;
 }
 
-/* Load an entire WAV's data chunk into a fresh buffer (mono or stereo). On
- * success sets *out_data (caller frees), *out_frames, *out_rate, *out_ch.
- * 8-bit mono is expanded to 16-bit here so the mixer stays 16-bit only. */
-static int wav_load_resident(const char* path, int expect_ch, int16_t** out_data, uint32_t* out_frames, uint32_t* out_rate, uint16_t* out_ch) {
+/* Load an entire WAV's data chunk into a fresh MONO 16-bit buffer. On success
+ * sets *out_data (caller frees), *out_frames, *out_rate, *out_ch (=1). Accepts
+ * mono or stereo masters; stereo is downmixed in place so the mixer's hot loop
+ * stays single-sample-per-frame (the asset pipeline already emits mono, so this
+ * stereo path is a defensive fallback, not the norm). 8-bit is expanded to
+ * 16-bit here so the mixer stays 16-bit only. */
+static int wav_load_resident(const char* path, int16_t** out_data, uint32_t* out_frames, uint32_t* out_rate, uint16_t* out_ch) {
   int fd = sceIoOpen(path, PSP_O_RDONLY, 0777);
   if (fd < 0)
     return -1;
   WavInfo w;
-  if (wav_parse(fd, &w) != 0 || (expect_ch && w.channels != expect_ch) ||
+  if (wav_parse(fd, &w) != 0 || (w.channels != 1 && w.channels != 2) ||
       (w.bits != 16 && w.bits != 8) || w.data_len == 0) {
     sceIoClose(fd);
     return -1;
@@ -157,10 +160,16 @@ static int wav_load_resident(const char* path, int expect_ch, int16_t** out_data
     free(tmp);
   }
   sceIoClose(fd);
+  /* Stereo -> mono downmix, in place. Write index i never clobbers an unread
+   * sample: future reads are at 2j,2j+1 for j>i, and i < 2j always. */
+  if (w.channels == 2) {
+    for (uint32_t i = 0; i < frames; i++)
+      buf[i] = (int16_t)(((int32_t)buf[i * 2] + buf[i * 2 + 1]) >> 1);
+  }
   *out_data = buf;
   *out_frames = frames;
   *out_rate = w.rate ? w.rate : PSP_OUT_RATE;
-  *out_ch = w.channels;
+  *out_ch = 1;
   return 0;
 }
 
@@ -651,8 +660,10 @@ int backend_audio_sfx_load(AudioSfx id, const char* relpath) {
   int16_t* data;
   uint32_t frames, rate;
   uint16_t ch;
-  if (wav_load_resident(path, 1, &data, &frames, &rate, &ch) != 0)
+  if (wav_load_resident(path, &data, &frames, &rate, &ch) != 0) {
+    fprintf(stderr, "audio_psp: failed to load sfx %s\n", relpath);
     return -1;
+  }
   if (s_sfx_data[id])
     free(s_sfx_data[id]);
   s_sfx_data[id] = data;
