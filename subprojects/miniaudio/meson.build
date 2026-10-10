@@ -7,6 +7,12 @@ ma_deps = []
 
 # PSP ('none') and Dreamcast ('dreamcast') have minimal POSIX implementations.
 if host_machine.system() == 'psp'
+  # MIPS Allegrex has no native 64-bit atomics: miniaudio emits calls to
+  # __atomic_load_8 / __atomic_store_8 / __atomic_exchange_8 that only
+  # resolve if libatomic is on the final link line. Propagated through
+  # ma_dep's link_args below so every consumer (not just the static lib
+  # itself, which does not resolve anything) picks it up automatically.
+  ma_link_args += ['-latomic']
   ma_c_args += ['-include', 'sys/select.h', '-DMA_NO_RUNTIME_LINKING']
 elif host_machine.system() == 'dreamcast'
   ma_link_args += ['-lpthread']
@@ -28,5 +34,6 @@ ma_dep = declare_dependency(
   include_directories: ma_inc,
   dependencies: ma_deps,
   compile_args: ma_c_args,
+  link_args: ma_link_args,
   link_with: ma_lib,
 )

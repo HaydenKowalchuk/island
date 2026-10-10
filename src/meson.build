@@ -168,9 +168,14 @@ elif opt_platform == 'psp'
   # pspsdk link recipe (matches the psp-dev sample/prx layout): everything is
   # wrapped in a group so static libs resolve, then the PRX specs/relocation
   # table let psp-prxgen turn the ELF into a bootable module.
+  # -latomic must live inside the same --start-group/--end-group block as
+  # miniaudio (meson auto-groups dependencies/libs there): MIPS Allegrex has
+  # no native 64-bit atomics, so miniaudio emits calls to __atomic_*_8 that
+  # only resolve if libatomic is scanned together with libminiaudio.a, not
+  # after it in a separate single-pass.
   psp_link_args = [
-    '-Wl,--end-group',
     '-latomic',
+    '-Wl,--end-group',
     '-lpspgu',
     '-lpspgum',
     '-lpspdebug',
@@ -375,10 +380,18 @@ test('terrain-cull', terrain_cull_test)
 # any game code calls into it. Prints 0.11.26 (dev-0.12 has not bumped the
 # MA_VERSION_* macros yet -- the branch name is what matters, not the literal
 # string).
+# ma_backend_psp.c calls sceAudioSRC*/sceAudioOutput2* directly, so this
+# target (unlike the main island exe, which gets the full psp_link_args set)
+# needs -lpspaudio on its own -- nothing else from that set is referenced.
+audio_smoke_link_args = []
+if opt_platform == 'psp'
+  audio_smoke_link_args += ['-lpspaudio']
+endif
 audio_smoke_test = executable(
   'audio-smoke-test',
-  files('../tests/audio_smoke.c'),
+  files('../tests/audio_smoke.c', 'backend/psp/ma_backend_psp.c'),
   dependencies: [miniaudio_dep],
+  link_args: audio_smoke_link_args,
   install: false,
 )
 test('audio-smoke', audio_smoke_test)
