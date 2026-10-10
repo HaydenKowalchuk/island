@@ -12,11 +12,13 @@
  */
 
 typedef enum {
-  MENU_SCREEN_INTRO,    /* title splash sequence (island1-zfn6) */
-  MENU_SCREEN_MAIN,     /* main menu over the attract backdrop */
-  MENU_SCREEN_CONTROLS, /* sub-screen: control bindings (island1-lb8c) */
-  MENU_SCREEN_CREDITS,  /* sub-screen: credits (island1-lb8c) */
-  MENU_SCREEN_PLAY      /* live gameplay */
+  MENU_SCREEN_INTRO,     /* title splash sequence (island1-zfn6) */
+  MENU_SCREEN_MAIN,      /* main menu over the attract backdrop */
+  MENU_SCREEN_CONTROLS,  /* sub-screen: control bindings (island1-lb8c) */
+  MENU_SCREEN_CREDITS,   /* sub-screen: credits (island1-lb8c) */
+  MENU_SCREEN_PAUSE,     /* in-game pause, opened with Start/P (island1-8nfp) */
+  MENU_SCREEN_INVENTORY, /* pause sub-screen: the item list (island1-8nfp) */
+  MENU_SCREEN_PLAY       /* live gameplay */
 } MenuScreen;
 
 void menu_init(void); /* boot state: starts on INTRO; called by game_init */
@@ -29,6 +31,31 @@ void menu_set_screen(MenuScreen screen);
 
 /* Current intro card (0-based); test/F3 use. */
 int menu_intro_card(void);
+
+/* Selected pause-menu item (0-based); test/dev use (island1-8nfp). */
+int menu_pause_item(void);
+
+/*
+ * The inventory panel (island1-iim2): one panel, two entrances. The pause
+ * menu's Inventory screen draws it, and game.c draws the same thing behind
+ * its direct TAB/Select overlay toggle, so the two never drift apart.
+ * `close_hint` is the footer line ("how do I close this").
+ */
+void menu_inventory_panel(const char* close_hint);
+
+/*
+ * True while the current screen consumes ACT_MENU_BACK for navigation. The
+ * desktop binds ESC to both menu-back and ACT_QUIT, so main.c must not close
+ * the window on a press a screen is using to go back (island1-8nfp).
+ */
+int menu_consumes_back(void);
+
+/*
+ * True while the attract backdrop (orbit camera) renders behind this screen —
+ * MAIN and its sub-screens. Everything else (gameplay, and the pause screens
+ * that show the frozen scene) runs the gameplay cameras instead.
+ */
+int menu_attract_backdrop(void);
 
 /*
  * Attract backdrop (island1-7u5i): the menu camera drifts around `anchor` (a

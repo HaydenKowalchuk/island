@@ -19,6 +19,17 @@ static float dist3(const float* a, const float* b) {
   return sqrtf(dx * dx + dy * dy + dz * dz);
 }
 
+/* One full press+release edge of `a` with a tick either side, the way a
+ * backend's callback delivers it. */
+static void tap(Action a) {
+  input_event_key(a, true);
+  input_begin_frame();
+  game_tick(1.0f / 60.0f);
+  input_event_key(a, false);
+  input_begin_frame();
+  game_tick(1.0f / 60.0f);
+}
+
 int main(void) {
   game_init();
 
@@ -147,6 +158,72 @@ int main(void) {
     input_begin_frame();
     assert(!input_pressed(nav[i]));
   }
+
+  /* Pause menu (island1-8nfp): Start/P opens it over frozen gameplay. */
+  tap(ACT_PAUSE);
+  assert(menu_screen() == MENU_SCREEN_PAUSE);
+  assert(menu_pause_item() == 0); /* RESUME is the default */
+
+  /* Frozen: a held throttle moves nothing, and the camera holds its pose. */
+  const float* pp = game_vehicle_pos();
+  float p0 = pp[0], p2 = pp[2];
+  game_render(1.0f / 60.0f);
+  float eye0[3];
+  const float* cam_hold = game_cam_pos();
+  eye0[0] = cam_hold[0];
+  eye0[1] = cam_hold[1];
+  eye0[2] = cam_hold[2];
+  input_event_key(ACT_THROTTLE, true);
+  for (int i = 0; i < 30; i++) {
+    input_begin_frame();
+    game_tick(1.0f / 60.0f);
+    game_render(1.0f / 60.0f);
+  }
+  input_event_key(ACT_THROTTLE, false);
+  input_begin_frame();
+  game_tick(1.0f / 60.0f);
+  game_render(1.0f / 60.0f);
+  pp = game_vehicle_pos();
+  assert(pp[0] == p0 && pp[2] == p2);
+  cam_hold = game_cam_pos();
+  assert(cam_hold[0] == eye0[0] && cam_hold[1] == eye0[1] && cam_hold[2] == eye0[2]);
+
+  /* Down to INVENTORY, open it, BACK returns to the pause menu (selection
+   * preserved). */
+  tap(ACT_MENU_DOWN);
+  assert(menu_screen() == MENU_SCREEN_PAUSE && menu_pause_item() == 1);
+  tap(ACT_MENU_CONFIRM);
+  assert(menu_screen() == MENU_SCREEN_INVENTORY);
+  tap(ACT_MENU_BACK);
+  assert(menu_screen() == MENU_SCREEN_PAUSE && menu_pause_item() == 1);
+
+  /* Controls entered from the pause menu returns HERE, not to the title. */
+  tap(ACT_MENU_DOWN);
+  assert(menu_pause_item() == 2);
+  tap(ACT_MENU_CONFIRM);
+  assert(menu_screen() == MENU_SCREEN_CONTROLS);
+  tap(ACT_MENU_BACK);
+  assert(menu_screen() == MENU_SCREEN_PAUSE);
+
+  /* Quit leaves to the title... */
+  tap(ACT_MENU_DOWN);
+  assert(menu_pause_item() == 3);
+  tap(ACT_MENU_CONFIRM);
+  assert(menu_screen() == MENU_SCREEN_MAIN);
+
+  /* ...and the title starts play again as usual. */
+  tap(ACT_MENU_CONFIRM);
+  assert(menu_screen() == MENU_SCREEN_PLAY);
+
+  /* RESUME (the default) returns to gameplay; the pause key toggles too. */
+  tap(ACT_PAUSE);
+  assert(menu_screen() == MENU_SCREEN_PAUSE && menu_pause_item() == 0);
+  tap(ACT_MENU_CONFIRM);
+  assert(menu_screen() == MENU_SCREEN_PLAY);
+  tap(ACT_PAUSE);
+  assert(menu_screen() == MENU_SCREEN_PAUSE);
+  tap(ACT_MENU_BACK);
+  assert(menu_screen() == MENU_SCREEN_PLAY);
 
   /* Attract camera (island1-7u5i): the drift stays above the water, keeps
    * the island within fog range, and moves smoothly. */

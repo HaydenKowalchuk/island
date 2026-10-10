@@ -1069,19 +1069,25 @@ static void walk_player(float dt) {
 }
 
 void game_tick(float dt) {
-  s_time += dt;
-
   /* Front-end flow (island1-tpz8): the menu ticks before the gameplay gates
    * and consumes the press that drives a transition, so it is not reused by
-   * the rules below. The world keeps breathing while gameplay waits (waves
-   * and bob read s_time), which is what keeps the menu backdrop alive. */
+   * the rules below. The world keeps breathing while the front-end waits (waves
+   * and bob read s_time), which is what keeps the menu backdrop alive — but a
+   * pause must freeze it, so s_time stops while the pause menu is up
+   * (island1-8nfp). */
   menu_tick(dt);
   MenuScreen front = menu_screen();
+  if (front != MENU_SCREEN_PAUSE)
+    s_time += dt;
+
   if (front != s_front_prev) {
     /* Camera transitions must lerp, never cut (island1-38h3): entering PLAY
-     * plays the arc from wherever the camera is — the attract pose during
-     * the menu handover. */
-    if (front == MENU_SCREEN_PLAY && s_cam_mode == CAM_CHASE) {
+     * from the attract backdrop plays the arc from the drifting eye. Resuming
+     * from the pause menu deliberately skips this — the gameplay camera was
+     * held exactly where the pause found it, so there is nothing to hand over
+     * and a cut (or an arc from the stale attract eye) would both be wrong. */
+    if (front == MENU_SCREEN_PLAY && s_front_prev == MENU_SCREEN_MAIN &&
+        s_cam_mode == CAM_CHASE) {
       CamPose from;
       menu_cam_pose(from.pos, from.look, &from.fov);
       if (s_mode == MODE_FOOT)
@@ -1322,7 +1328,19 @@ static void emit_ocean(float t) {
  * a dark under-hull, a red body, a dark wedge cabin and a low nose. It bobs and
  * rocks gently so it reads as floating on the water.
  */
+/* Per-frame LOD counters (F3): drawn per band + how many were fog-culled. */
+static int s_lod_count[LOD_LEVEL_COUNT];
+
+/* Band for a world point this frame, and count it (island1-288p). */
+static LodLevel prop_lod(const float pos[3]) {
+  LodLevel l = lod_level(pos[0] - s_cam_pos[0], pos[2] - s_cam_pos[2]);
+  s_lod_count[l]++;
+  return l;
+}
+
 static void emit_car(float t) {
+  if (prop_lod(s_veh.pos) == LOD_CULL)
+    return;
   r_pass(R_PASS_VEHICLE);
   /* Bob settles as speed climbs so a full-throttle run reads planted
    * (island1-9gio). */
@@ -1394,8 +1412,7 @@ static void emit_parcel(float t) {
     glm_rotate(world, t * 0.8f, (vec3){0.0f, 1.0f, 0.0f});
   }
 
-  if (lod_level(world[3][0] - s_cam_pos[0], world[3][2] - s_cam_pos[2]) ==
-      LOD_FAR)
+  if (prop_lod(world[3]) == LOD_CULL)
     return;
   r_mesh(&s_parcel, (const float*)world, white);
 }
@@ -1411,10 +1428,10 @@ static void emit_houses(float t) {
     glm_mat4_identity(world);
     glm_translate(world, s_houses[i].base);
     glm_rotate(world, s_houses[i].facing, (vec3){0.0f, 1.0f, 0.0f});
-    LodLevel lod = lod_level(s_houses[i].base[0] - s_cam_pos[0],
-                             s_houses[i].base[2] - s_cam_pos[2]);
-    if (lod == LOD_FAR)
+    LodLevel lod = prop_lod(s_houses[i].base);
+    if (lod == LOD_CULL)
       continue;
+    /* Full detail near; the simplified mesh covers the mid + far bands. */
     r_mesh(lod == LOD_NEAR ? &s_house : &s_house_lod, (const float*)world, white);
   }
 }
@@ -1422,14 +1439,13 @@ static void emit_houses(float t) {
 /* The depot pad and sign. */
 static void emit_depot(float t) {
   (void)t;
+  if (prop_lod(s_depot) == LOD_CULL)
+    return;
   r_pass(R_PASS_PROPS);
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 
   mat4 world;
   glm_mat4_identity(world);
-  if (lod_level(s_depot[0] - s_cam_pos[0], s_depot[2] - s_cam_pos[2]) ==
-      LOD_FAR)
-    return;
   glm_translate(world, s_depot);
   r_mesh(&s_depot_mesh, (const float*)world, white);
 }
@@ -1444,8 +1460,7 @@ static void emit_residents(float t) {
     glm_mat4_identity(world);
     glm_translate(world, s_houses[i].resident);
     glm_rotate(world, s_houses[i].look, (vec3){0.0f, 1.0f, 0.0f});
-    if (lod_level(s_houses[i].resident[0] - s_cam_pos[0],
-                  s_houses[i].resident[2] - s_cam_pos[2]) != LOD_NEAR)
+    if (prop_lod(s_houses[i].resident) == LOD_CULL)
       continue;
     r_mesh(&s_player_mesh, (const float*)world, HOUSE_TINT[i]);
   }
@@ -1461,6 +1476,8 @@ static void emit_beacon(float t) {
     return;
 
   const float* p = active_target();
+  if (prop_lod(p) == LOD_CULL)
+    return; /* past full fog the shaft is sky-colour — invisible anyway */
   const QuestStepType qt = quest_step_type();
   const int pickup = (qt == QSTEP_PICKUP || qt == QSTEP_CLAIM);
   float color[4] = {pickup ? 0.35f : 0.45f, pickup ? 0.85f : 1.0f, pickup ? 1.0f : 0.45f, 0.0f};
@@ -1586,6 +1603,8 @@ static void draw_compass(const float* white) {
 void game_render(float frame_dt) {
   r_frame_begin();
   r_viewport(s_view_w, s_view_h);
+  for (int i = 0; i < LOD_LEVEL_COUNT; i++)
+    s_lod_count[i] = 0;
 
   /* Intro (island1-zfn6): black boot card — no scene, no camera work,
    * cheapest on PSP/DC too. The fade and text are recorded by menu_render(). */
@@ -1598,7 +1617,7 @@ void game_render(float frame_dt) {
   const float fog_color[4] = {SKY_COLOR_R, SKY_COLOR_G, SKY_COLOR_B, 1.0f};
   r_fog(1, fog_color, FOG_START, FOG_END);
 
-  if (menu_screen() != MENU_SCREEN_PLAY) {
+  if (menu_attract_backdrop()) {
     /* Attract backdrop (island1-7u5i): scripted drift shot for the front-end;
      * the gameplay cameras stay parked until play resumes. */
     menu_cam_update(s_view_w, s_view_h);
@@ -1607,16 +1626,24 @@ void game_render(float frame_dt) {
      * handover seeds from the attract eye (island1-38h3). */
     menu_cam_eye(s_cam_pos);
   } else if (s_cam_mode == CAM_CHASE) {
-    if (s_mode == MODE_FOOT)
-      chase_cam_update(&s_chase, s_player.pos, s_player.heading, s_player.speed_kmh, s_view_w, s_view_h, frame_dt);
-    else
-      chase_cam_update(&s_chase, s_veh.pos, s_veh.heading, s_veh.speed_kmh, s_view_w, s_view_h, frame_dt);
+    /* PLAY and the pause screens share the gameplay camera. While paused the
+     * camera update is skipped outright (chase_cam_update treats dt<=0 as a
+     * full step, so passing zero would not freeze it), keeping the exact pose
+     * the pause found it in (island1-8nfp); a scripted handover arc simply
+     * holds mid-flight and continues on resume. */
+    if (menu_screen() == MENU_SCREEN_PLAY) {
+      if (s_mode == MODE_FOOT)
+        chase_cam_update(&s_chase, s_player.pos, s_player.heading, s_player.speed_kmh, s_view_w, s_view_h, frame_dt);
+      else
+        chase_cam_update(&s_chase, s_veh.pos, s_veh.heading, s_veh.speed_kmh, s_view_w, s_view_h, frame_dt);
+    }
     r_camera((const float*)s_chase.view, (const float*)s_chase.proj);
     s_cam_pos[0] = s_chase.pos[0];
     s_cam_pos[1] = s_chase.pos[1];
     s_cam_pos[2] = s_chase.pos[2];
   } else {
-    cam_update(&s_cam, s_view_w, s_view_h);
+    if (menu_screen() == MENU_SCREEN_PLAY)
+      cam_update(&s_cam, s_view_w, s_view_h);
     r_camera((const float*)s_cam.view, (const float*)s_cam.proj);
     s_cam_pos[0] = s_cam.pos[0];
     s_cam_pos[1] = s_cam.pos[1];
@@ -1640,38 +1667,14 @@ void game_render(float frame_dt) {
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
   char buf[48];
 
-  /* Inventory overlay (island1-iim2): TAB on desktop, D-pad Up on PSP.
-   * Independent of the F3 stats HUD, and usable mid-conversation. Gameplay
-   * UI only: hidden while the front-end is up (island1-tpz8). */
-  if (s_inv_open && menu_screen() == MENU_SCREEN_PLAY) {
-    r_pass(R_PASS_HUD);
-    int rows = inv_used();
-    if (rows < 1)
-      rows = 1;
-    int bw = 208;
-    int bh = 40 + rows * 10;
-    int bx = (s_view_w - bw) / 2;
-    int by = (s_view_h - bh) / 2;
-    const float panel[4] = {0.01f, 0.02f, 0.05f, 0.88f};
-    const float edge[4] = {0.72f, 0.82f, 0.95f, 0.95f};
-    /* px -> normalized, y flipped bottom-up like dialog.c's rect_px. */
-    float nx = (float)bx / (float)s_view_w;
-    float ny = 1.0f - (float)(by + bh) / (float)s_view_h;
-    r_rect_2d(nx - 0.004f, ny - 0.010f, (float)bw / (float)s_view_w + 0.008f, (float)bh / (float)s_view_h + 0.020f, edge);
-    r_rect_2d(nx, ny, (float)bw / (float)s_view_w, (float)bh / (float)s_view_h, panel);
-    r_text_2d(bx + 8, by + 6, 1.0f, "INVENTORY", white);
-    if (inv_used() == 0) {
-      r_text_2d(bx + 8, by + 20, 1.0f, "EMPTY", white);
-    } else {
-      for (int i = 0; i < inv_used(); i++) {
-        const InvSlot* slot = inv_slot(i);
-        const ItemDef* def = item_def(slot->id);
-        snprintf(buf, sizeof(buf), "%s  x%d", def ? def->name : "?", slot->count);
-        r_text_2d(bx + 8, by + 20 + i * 10, 1.0f, buf, white);
-      }
-    }
-    r_text_2d(bx + 8, by + bh - 12, 1.0f, "TAB / UP CLOSE", white);
-  }
+  /* Inventory overlay (island1-iim2): TAB on desktop, Select on PSP. Also
+   * reachable as a screen of the pause menu (island1-8nfp) — both entrances
+   * draw the same panel through menu_inventory_panel(). Independent of the F3
+   * stats HUD, and usable mid-conversation. Gameplay UI only: hidden while
+   * the front-end is up (island1-tpz8). The toggle itself only ever runs
+   * while PLAY, because game_tick returns for every other screen. */
+  if (s_inv_open && menu_screen() == MENU_SCREEN_PLAY)
+    menu_inventory_panel("TAB / SELECT CLOSE");
 
   if (s_hud && menu_screen() == MENU_SCREEN_PLAY) {
     int on_land = terrain_height_at(s_veh.pos[0], s_veh.pos[2]) > 0.0f;
@@ -1689,6 +1692,8 @@ void game_render(float frame_dt) {
       r_text_2d(12, 54, 1.0f, near_car ? "F GET IN" : "WASD WALK  F3 STATS", white);
     else
       r_text_2d(12, 54, 1.0f, on_land ? "F GET OUT  F3 STATS" : "DRIVE TO LAND TO DISEMBARK", white);
+    /* Pause discoverability (island1-8nfp): P on desktop, Start on consoles. */
+    r_text_2d(12, 66, 1.0f, "P / START PAUSE", white);
 
     /* Objective lines follow the current quest step (island1-f9x2). */
     const float* ap = active_pos();
@@ -1808,6 +1813,13 @@ void game_render(float frame_dt) {
     int t_drawn = 0, t_total = 0;
     terrain_stats(&t_drawn, &t_total);
     snprintf(buf, sizeof(buf), "TERRAIN %d/%d", t_drawn, t_total);
+    r_text_2d(x, y, 1.0f, buf, white);
+    y += 12;
+
+    /* Per-band prop counts (island1-288p): near/mid/far drawn, culled. */
+    snprintf(buf, sizeof(buf), "LOD %d/%d/%d CULLED %d", s_lod_count[LOD_NEAR],
+             s_lod_count[LOD_MID], s_lod_count[LOD_FAR],
+             s_lod_count[LOD_CULL]);
     r_text_2d(x, y, 1.0f, buf, white);
   }
 

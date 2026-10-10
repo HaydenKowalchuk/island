@@ -19,14 +19,17 @@
  *   analog stick -> AX_STEER (x); on foot also fwd/back (y -> AX_THROTTLE /
  *                   AX_BRAKE), so the walking player moves on the stick
  *                   alone; D-pad steers when the stick is centred
- *   Start        -> pause
+ *   Start        -> pause (opens the pause menu)
  *   A+B+X+Y+Start -> quit (KOS convention for exiting)
+ *   D-pad Up/Down -> menu nav; A confirms, B backs once a menu screen is up
+ *                   (aliasing the gameplay buttons, like the desktop table;
+ *                   island1-8nfp)
  *   B            -> nothing alone; both levers held (dev chord) + B ->
  *                   ACT_DEV_CAM (dev fly cam). No face button carries a
  *                   gameplay action, so the dev binding needs a chord to
  *                   stay out of the way (island1-umaa).
- *   (inventory is not a button: it lives in a Start-opened menu, tracked
- *    separately - not wired here yet.)
+ *   (inventory has no button: it lives in the Start-opened pause menu -
+ *    island1-8nfp.)
  *
  * R accelerates and L brakes, matching the usual console convention (Xbox and
  * PlayStation pads put the accelerator on the right trigger).
@@ -64,6 +67,10 @@ static const Action s_mapped[] = {
     ACT_VEHICLE,
     ACT_PAUSE,
     ACT_QUIT,
+    ACT_MENU_UP,
+    ACT_MENU_DOWN,
+    ACT_MENU_CONFIRM,
+    ACT_MENU_BACK,
     ACT_DEV_CAM,
 };
 
@@ -170,6 +177,15 @@ void backend_input_poll(void) {
   key_event(buttons, CONT_Y, ACT_INTERACT);
   key_event(buttons, CONT_X, ACT_VEHICLE);
   key_event(buttons, CONT_START, ACT_PAUSE);
+
+  /* Menu nav (island1-8nfp): D-pad Up/Down move, A confirms, B backs. These
+   * alias the gameplay buttons — menu screens read them, gameplay ignores
+   * them. B's raw edge coexists with the chorded dev-cam below, which does
+   * its own edge tracking. */
+  key_event(buttons, CONT_DPAD_UP, ACT_MENU_UP);
+  key_event(buttons, CONT_DPAD_DOWN, ACT_MENU_DOWN);
+  key_event(buttons, CONT_A, ACT_MENU_CONFIRM);
+  key_event(buttons, CONT_B, ACT_MENU_BACK);
 
   /* Dev chord: both levers past threshold unlocks B as ACT_DEV_CAM. This
    * needs its own edge tracking, not key_event's - the latter compares

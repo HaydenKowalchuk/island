@@ -2,16 +2,20 @@
 
 #include <cglm/cglm.h>
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "chase_cam.h"
 #include "input.h"
+#include "inventory.h"
+#include "items.h"
 #include "render.h"
 
 /*
  * Front-end state machine (island1-tpz8). Gameplay rules live in game.c, which
  * gates on menu_screen(); this module owns the flow, the intro cards
- * (island1-zfn6) and the attract backdrop (island1-7u5i).
+ * (island1-zfn6), the attract backdrop (island1-7u5i) and the pause menu
+ * (island1-8nfp).
  */
 
 /* Intro cards: studio card, then the title splash. Any press skips one card. */
@@ -36,10 +40,16 @@
 #define MENU_ZNEAR 0.1f
 #define MENU_ZFAR 1000.0f
 
+/* Pause menu (island1-8nfp): the items, in draw/selection order. */
+static const char* const PAUSE_ITEMS[] = {"RESUME", "INVENTORY", "CONTROLS", "QUIT TO TITLE"};
+#define PAUSE_COUNT ((int)(sizeof(PAUSE_ITEMS) / sizeof(PAUSE_ITEMS[0])))
+
 static MenuScreen s_screen;
-static int s_card;         /* intro card index */
-static float s_card_timer; /* seconds into the current card */
-static float s_menu_time;  /* attract-camera clock, advanced in menu_tick */
+static int s_card;            /* intro card index */
+static float s_card_timer;    /* seconds into the current card */
+static float s_menu_time;     /* attract-camera clock, advanced in menu_tick */
+static int s_pause_sel;       /* selected pause-menu item */
+static MenuScreen s_sub_from; /* where CONTROLS/CREDITS returns to */
 
 static float s_anchor[2]; /* orbit centre, over water */
 static float s_look[2];   /* look-at point on the island */
@@ -54,6 +64,8 @@ void menu_init(void) {
   s_card = 0;
   s_card_timer = 0.0f;
   s_menu_time = 0.0f;
+  s_pause_sel = 0;
+  s_sub_from = MENU_SCREEN_MAIN;
 }
 
 MenuScreen menu_screen(void) {
@@ -64,10 +76,15 @@ int menu_intro_card(void) {
   return s_card;
 }
 
+int menu_pause_item(void) {
+  return s_pause_sel;
+}
+
 void menu_set_screen(MenuScreen screen) {
   s_screen = screen;
   s_card = 0;
   s_card_timer = 0.0f;
+  s_pause_sel = 0;
 }
 
 void menu_set_backdrop(float anchor_x, float anchor_z, float look_x, float look_z) {
@@ -115,10 +132,50 @@ void menu_tick(float dt) {
     case MENU_SCREEN_CONTROLS:
     case MENU_SCREEN_CREDITS:
       if (input_pressed(ACT_MENU_BACK))
-        s_screen = MENU_SCREEN_MAIN;
+        s_screen = s_sub_from;
       break;
     case MENU_SCREEN_PLAY:
-      /* No back-exit in v1: ESC still quits through the backend. */
+      /* Start (consoles) / P (desktop) opens the pause menu (island1-8nfp).
+       * No back-exit in v1: ESC still quits through the backend. */
+      if (input_pressed(ACT_PAUSE)) {
+        s_pause_sel = 0;
+        s_screen = MENU_SCREEN_PAUSE;
+      }
+      break;
+    case MENU_SCREEN_PAUSE:
+      /* The pause key or BACK resumes; everything else is item navigation.
+       * game.c freezes the sim and the camera while this screen is up. */
+      if (input_pressed(ACT_PAUSE) || input_pressed(ACT_MENU_BACK)) {
+        s_screen = MENU_SCREEN_PLAY;
+        break;
+      }
+      if (input_pressed(ACT_MENU_UP))
+        s_pause_sel = (s_pause_sel + PAUSE_COUNT - 1) % PAUSE_COUNT;
+      if (input_pressed(ACT_MENU_DOWN))
+        s_pause_sel = (s_pause_sel + 1) % PAUSE_COUNT;
+      if (input_pressed(ACT_MENU_CONFIRM)) {
+        switch (s_pause_sel) {
+          case 0:
+            s_screen = MENU_SCREEN_PLAY;
+            break;
+          case 1:
+            s_screen = MENU_SCREEN_INVENTORY;
+            break;
+          case 2:
+            s_sub_from = MENU_SCREEN_PAUSE;
+            s_screen = MENU_SCREEN_CONTROLS;
+            break;
+          default:
+            /* Quit to title: back to MAIN over the attract backdrop. The
+             * world keeps its state for now; a fresh-run reset is separate. */
+            s_screen = MENU_SCREEN_MAIN;
+            break;
+        }
+      }
+      break;
+    case MENU_SCREEN_INVENTORY:
+      if (input_pressed(ACT_MENU_BACK) || input_pressed(ACT_PAUSE))
+        s_screen = MENU_SCREEN_PAUSE;
       break;
     default:
       break;
@@ -193,6 +250,119 @@ void menu_render(void) {
     int hw = (int)(8.0f * 1.5f * (float)(sizeof(hint) - 1));
     r_text_2d((fr->width - hw) / 2, fr->height - 56, 1.5f, hint, dim);
     return;
+  }
+
+  /* Pause menu (island1-8nfp): veil over the frozen scene, one centred
+   * column, the selected item marked with "> " and picked out in colour. */
+  if (s_screen == MENU_SCREEN_PAUSE) {
+    const RenderFrame* fr = r_frame();
+    const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    const float dim[4] = {1.0f, 1.0f, 1.0f, 0.55f};
+    const float sel[4] = {1.0f, 0.92f, 0.45f, 1.0f};
+    const float veil[4] = {0.0f, 0.0f, 0.0f, 0.55f};
+    r_rect_2d(0.0f, 0.0f, 1.0f, 1.0f, veil);
+
+    static const char title[] = "PAUSED";
+    int tw = (int)(8.0f * 2.0f * (float)(sizeof(title) - 1));
+    r_text_2d((fr->width - tw) / 2, fr->height / 2 - 72, 2.0f, title, white);
+
+    char row[32];
+    for (int i = 0; i < PAUSE_COUNT; i++) {
+      snprintf(row, sizeof(row), "%s%s", i == s_pause_sel ? "> " : "  ", PAUSE_ITEMS[i]);
+      int rw = (int)(8.0f * 1.5f * (float)strlen(row));
+      r_text_2d((fr->width - rw) / 2, fr->height / 2 - 24 + i * 18, 1.5f, row, i == s_pause_sel ? sel : dim);
+    }
+    return;
+  }
+
+  if (s_screen == MENU_SCREEN_INVENTORY) {
+    menu_inventory_panel("BACK TO PAUSE");
+    return;
+  }
+
+  /* Controls card. island1-lb8c owns the real sub-screens; this is the
+   * stop-gap so the pause menu's Controls entry is not a blank screen. The
+   * rows cover all three desktop and console bindings in one list. */
+  if (s_screen == MENU_SCREEN_CONTROLS) {
+    const RenderFrame* fr = r_frame();
+    const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    const float veil[4] = {0.0f, 0.0f, 0.0f, 0.65f};
+    r_rect_2d(0.0f, 0.0f, 1.0f, 1.0f, veil);
+    static const char title[] = "CONTROLS";
+    int tw = (int)(8.0f * 2.0f * (float)(sizeof(title) - 1));
+    r_text_2d((fr->width - tw) / 2, fr->height / 2 - 76, 2.0f, title, white);
+    static const char* const rows[] = {
+        "DRIVE      W/S OR L/R TRIGGERS",
+        "WALK       WASD OR STICK",
+        "BOOST      SHIFT  CROSS/A",
+        "INTERACT   E  SQUARE/Y",
+        "VEHICLE    F  TRIANGLE/X",
+        "INVENTORY  TAB/SELECT",
+        "PAUSE      P/START",
+        "BACK       ESC/B/CIRCLE",
+    };
+    for (int i = 0; i < (int)(sizeof(rows) / sizeof(rows[0])); i++)
+      r_text_2d(fr->width / 2 - 120, fr->height / 2 - 48 + i * 12, 1.0f, rows[i], white);
+    return;
+  }
+}
+
+void menu_inventory_panel(const char* close_hint) {
+  r_pass(R_PASS_HUD);
+
+  const RenderFrame* fr = r_frame();
+  const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  int rows = inv_used();
+  if (rows < 1)
+    rows = 1;
+  int bw = 208;
+  int bh = 40 + rows * 10;
+  int bx = (fr->width - bw) / 2;
+  int by = (fr->height - bh) / 2;
+  const float panel[4] = {0.01f, 0.02f, 0.05f, 0.88f};
+  const float edge[4] = {0.72f, 0.82f, 0.95f, 0.95f};
+  /* px -> normalized, y flipped bottom-up like dialog.c's rect_px. */
+  float nx = (float)bx / (float)fr->width;
+  float ny = 1.0f - (float)(by + bh) / (float)fr->height;
+  r_rect_2d(nx - 0.004f, ny - 0.010f, (float)bw / (float)fr->width + 0.008f, (float)bh / (float)fr->height + 0.020f, edge);
+  r_rect_2d(nx, ny, (float)bw / (float)fr->width, (float)bh / (float)fr->height, panel);
+  r_text_2d(bx + 8, by + 6, 1.0f, "INVENTORY", white);
+  if (inv_used() == 0) {
+    r_text_2d(bx + 8, by + 20, 1.0f, "EMPTY", white);
+  } else {
+    char buf[48];
+    for (int i = 0; i < inv_used(); i++) {
+      const InvSlot* slot = inv_slot(i);
+      const ItemDef* def = item_def(slot->id);
+      snprintf(buf, sizeof(buf), "%s  x%d", def ? def->name : "?", slot->count);
+      r_text_2d(bx + 8, by + 20 + i * 10, 1.0f, buf, white);
+    }
+  }
+  r_text_2d(bx + 8, by + bh - 12, 1.0f, close_hint, white);
+}
+
+int menu_consumes_back(void) {
+  switch (s_screen) {
+    case MENU_SCREEN_PAUSE:
+    case MENU_SCREEN_INVENTORY:
+    case MENU_SCREEN_CONTROLS:
+    case MENU_SCREEN_CREDITS:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+int menu_attract_backdrop(void) {
+  switch (s_screen) {
+    case MENU_SCREEN_MAIN:
+      return 1;
+    case MENU_SCREEN_CONTROLS:
+    case MENU_SCREEN_CREDITS:
+      /* Controls entered from the pause menu keeps the frozen scene. */
+      return s_sub_from == MENU_SCREEN_MAIN;
+    default:
+      return 0;
   }
 }
 

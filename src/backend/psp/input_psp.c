@@ -12,8 +12,10 @@
  *   R        -> throttle (vehicle, digital)   L  -> brake (vehicle, digital)
  *   Cross    -> boost                             Square -> ACT_INTERACT
  *   Triangle -> ACT_VEHICLE                       Start  -> ACT_PAUSE
- *   Select   -> ACT_INVENTORY (overlay shortcut; long-term this moves into
- *               a Start-opened menu - see island1-umaa)     Home -> ACT_QUIT
+ *   Select   -> ACT_INVENTORY (overlay shortcut; the pause menu's Inventory
+ *               entry is the traditional path - island1-8nfp)     Home -> ACT_QUIT
+ *   D-pad Up/Down -> menu nav (also steers L/R); Cross confirms, Circle backs
+ *               out once a menu screen is up (island1-8nfp)
  *   L+R held (dev chord) + Circle -> ACT_DEV_CAM; + D-pad Up -> ACT_DEV_RESET
  *               (no face button carries a gameplay action reserved for
  *               dev-only use, and volume keys are left alone - not for game
@@ -59,6 +61,10 @@ static const Action s_mapped[] = {
     ACT_PAUSE,
     ACT_INVENTORY,
     ACT_QUIT,
+    ACT_MENU_UP,
+    ACT_MENU_DOWN,
+    ACT_MENU_CONFIRM,
+    ACT_MENU_BACK,
     ACT_DEV_CAM,
     ACT_DEV_DEBUG,
     ACT_DEV_RESET,
@@ -149,6 +155,14 @@ void backend_input_poll(void) {
   key_event(b, PSP_CTRL_START, ACT_PAUSE);
   key_event(b, PSP_CTRL_HOME, ACT_QUIT);
   key_event(b, PSP_CTRL_SELECT, ACT_INVENTORY);
+
+  /* Menu nav (island1-8nfp): D-pad Up/Down move, Cross confirms, Circle
+   * backs. These alias the gameplay buttons exactly like the desktop table
+   * does — menu screens read them, gameplay ignores them. */
+  key_event(b, PSP_CTRL_UP, ACT_MENU_UP);
+  key_event(b, PSP_CTRL_DOWN, ACT_MENU_DOWN);
+  key_event(b, PSP_CTRL_CROSS, ACT_MENU_CONFIRM);
+  key_event(b, PSP_CTRL_CIRCLE, ACT_MENU_BACK);
 
   /* Dev chord: both triggers held unlocks Circle as ACT_DEV_CAM and D-pad Up
    * as ACT_DEV_RESET. Neither button carries a gameplay action, so there is

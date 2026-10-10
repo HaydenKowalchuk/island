@@ -23,6 +23,7 @@
 #include "game.h"
 #include "input.h"
 #include "input_glfw.h"
+#include "menu.h"
 #include "render_gl.h"
 
 #define WINDOW_W 1280
@@ -153,8 +154,10 @@ int main(int argc, char** argv) {
     glfwPollEvents();
     backend_input_poll();
 
-    /* ESC goes through the input manager like everything else. */
-    if (input_held(ACT_QUIT))
+    /* ESC goes through the input manager like everything else, but a screen
+     * that consumes menu-back (pause, inventory, controls) owns the press —
+     * it must resume/go back, not close the window (island1-8nfp). */
+    if (input_held(ACT_QUIT) && !menu_consumes_back())
       glfwSetWindowShouldClose(g_window, true);
 
     accumulator += frame_dt;

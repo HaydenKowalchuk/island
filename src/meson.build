@@ -323,6 +323,17 @@ menu_test = executable(
 )
 test('menu', menu_test)
 
+# GL-free test for the fog-unified LOD bands (island1-288p): boundaries and
+# props/particles/terrain culling together past FOG_END.
+lod_test = executable(
+  'lod-test',
+  files('../tests/lod_test.c') + core_sources,
+  include_directories: [core_inc],
+  dependencies: [cglm_dep, math_dep],
+  install: false,
+)
+test('lod', lod_test)
+
 # GL-free behaviour test for the chase camera spring/lag.
 chase_cam_test = executable(
   'chase-cam-test',
