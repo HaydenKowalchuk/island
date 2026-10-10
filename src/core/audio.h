@@ -7,8 +7,9 @@
  * per-frame updates, single-track music, volume buses. Core owns the node
  * pool and the 3D math (portable, GL-free testable); each backend implements
  * the backend_audio_* primitives at the bottom of this file with its native
- * device (desktop: miniaudio; Dreamcast: KOS snd_stream + sfxmgr; PSP: null
- * until decided). No platform types leak into this header.
+ * device (desktop: miniaudio; Dreamcast: KOS snd_stream + sfxmgr; PSP: native
+ * sceAudio software mixer, PGE-style). No platform types leak into this
+ * header.
  */
 
 typedef enum {
@@ -92,8 +93,8 @@ void audio_calc_positional(const float listener_pos[3], float listener_yaw,
                            float* out_pan, float* out_pitch);
 
 /* ---- Backend primitives ------------------------------------------------
- * Implemented per platform (audio_desktop.c / audio_dc.c) or as no-ops in
- * backend/common/audio_null.c (GL-free tests, PSP until decided). Volumes
+ * Implemented per platform (audio_desktop.c / audio_dc.c / audio_psp.c) or
+ * as no-ops in backend/common/audio_null.c (GL-free tests). Volumes
  * arriving here are already scaled by the buses. */
 
 int backend_audio_init(void);

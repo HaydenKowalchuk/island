@@ -245,27 +245,18 @@ elif opt_platform == 'psp'
     'backend/psp/main.c',
     'backend/psp/render_gu.c',
     'backend/psp/texture_gu.c',
-    # Silent no-op audio backend until island1-26pd decides the PSP audio
-    # strategy; keeps core's audio_init() linkable with no device code.
-    'backend/common/audio_null.c',
-    # Real MA_SUPPORT_PSP vtable (integrity's proven sceAudio glue). Only
-    # compiled here -- desktop/dreamcast never define MA_SUPPORT_PSP, and
-    # subprojects/miniaudio/miniaudio.h gates every reference to
-    # ma_device_backend_psp behind that same macro, so those platforms never
-    # see or need this symbol at all.
-    'backend/psp/ma_backend_psp.c',
+    # Native sceAudio backend (island1-26pd): PGE-style software mixer on a
+    # sceAudioChReserve channel. No miniaudio on PSP at all -- toolchain
+    # functions only, same architecture as audio_dc.c on dreamcast.
+    'backend/psp/audio_psp.c',
   )
 
   # pspsdk link recipe (matches the psp-dev sample/prx layout): everything is
   # wrapped in a group so static libs resolve, then the PRX specs/relocation
   # table let psp-prxgen turn the ELF into a bootable module.
-  # -latomic must live inside the same --start-group/--end-group block as
-  # miniaudio (meson auto-groups dependencies/libs there): MIPS Allegrex has
-  # no native 64-bit atomics, so miniaudio emits calls to __atomic_*_8 that
-  # only resolve if libatomic is scanned together with libminiaudio.a, not
-  # after it in a separate single-pass.
+  # No -latomic anymore: that existed only for miniaudio's 64-bit atomics on
+  # MIPS Allegrex, and audio_psp.c is plain integer C.
   psp_link_args = [
-    '-latomic',
     '-Wl,--end-group',
     '-lpspgu',
     '-lpspgum',
@@ -289,7 +280,7 @@ elif opt_platform == 'psp'
     'island',
     core_sources + backend_sources,
     include_directories: [core_inc, backend_inc],
-    dependencies: [cglm_dep, miniaudio_dep],
+    dependencies: [cglm_dep],
     link_args: psp_link_args,
     install: false,
   )
