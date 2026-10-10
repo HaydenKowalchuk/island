@@ -110,38 +110,54 @@ int main(void) {
     }
 
     /*
-     * 5. Transition without a cut (island1-38h3): the spring seeds from
-     *    `from_pos` (NULL snaps, like init) and pulls to the framing; the
-     *    distance to the target shrinks monotonically (no overshoot).
+     * 5. Transition arc (island1-38h3): a scripted ~1.2s move from the
+     *    from-pose — the first frame matches the pose (no cut), the subject
+     *    distance closes late (the lateral/vertical swing happens first),
+     *    the FOV blends, and it settles on the framing.
      */
     ChaseCam tr;
-    const float from[3] = {0.0f, 3.0f, -30.0f};
-    chase_cam_transition(&tr, car, 0.0f, from);
-    float seeded = sqrtf(tr.pos[0] * tr.pos[0] + tr.pos[1] * tr.pos[1] +
-                         (tr.pos[2] + 30.0f) * (tr.pos[2] + 30.0f));
-    if (seeded > 0.001f || fabsf(tr.heading_lag) > 1e-6f || vel_norm(&tr) > 1e-6f) {
-        printf("FAIL: transition seed pos=(%.2f, %.2f, %.2f) lag=%.3f\n",
-               tr.pos[0], tr.pos[1], tr.pos[2], tr.heading_lag);
-        return 1;
-    }
-    float prev_d = 1.0e9f;
-    float max_rise = 0.0f;
-    for (int i = 0; i < 300; i++) {
-        chase_cam_update(&tr, car, 0.0f, 0.0f, 320, 240, TICK);
-        float d = sqrtf(tr.pos[0] * tr.pos[0] +
-                        (tr.pos[1] - 3.2f) * (tr.pos[1] - 3.2f) +
-                        (tr.pos[2] + 7.0f) * (tr.pos[2] + 7.0f));
-        if (d > prev_d && d - prev_d > max_rise)
-            max_rise = d - prev_d;
-        prev_d = d;
-    }
-    if (max_rise > 0.01f || prev_d > 0.5f) {
-        printf("FAIL: transition lerp rise=%.4f final_d=%.3f\n", max_rise,
-               prev_d);
+    CamPose fp = {{25.0f, 6.0f, 10.0f}, {0.0f, 2.0f, 20.0f}, 55.0f};
+    chase_cam_transition(&tr, car, 0.0f, &fp);
+
+    chase_cam_update(&tr, car, 0.0f, 0.0f, 320, 240, TICK);
+    float d_from = sqrtf((tr.pos[0] - fp.pos[0]) * (tr.pos[0] - fp.pos[0]) +
+                         (tr.pos[1] - fp.pos[1]) * (tr.pos[1] - fp.pos[1]) +
+                         (tr.pos[2] - fp.pos[2]) * (tr.pos[2] - fp.pos[2]));
+    if (d_from > 0.5f) {
+        printf("FAIL: arc first frame not at from-pose (d=%.3f)\n", d_from);
         return 1;
     }
 
-    /* NULL from_pos snaps into place, identical to init. */
+    /* Halfway through the window: the lateral swing has happened and the
+     * FOV is blending, but the subject distance has closed under a third. */
+    for (int i = 1; i < 36; i++)
+        chase_cam_update(&tr, car, 0.0f, 0.0f, 320, 240, TICK);
+    float mid_xz = sqrtf(tr.pos[0] * tr.pos[0] + tr.pos[2] * tr.pos[2]);
+    float mid_bearing = atan2f(tr.pos[0], tr.pos[2]);
+    if (mid_xz < 18.0f) {
+        printf("FAIL: distance closed too early at mid (%.2f)\n", mid_xz);
+        return 1;
+    }
+    if (fabsf(mid_bearing - atan2f(25.0f, 10.0f)) < 0.5f) {
+        printf("FAIL: no lateral swing at mid (bearing=%.2f)\n", mid_bearing);
+        return 1;
+    }
+    if (tr.fov <= 55.0f || tr.fov >= 58.0f) {
+        printf("FAIL: fov not blending at mid (%.2f)\n", tr.fov);
+        return 1;
+    }
+
+    /* The arc ends on the framing, at rest, at the base fov. */
+    for (int i = 36; i < 300; i++)
+        chase_cam_update(&tr, car, 0.0f, 0.0f, 320, 240, TICK);
+    if (fabsf(tr.pos[2] + 7.0f) > 0.25f || fabsf(tr.pos[1] - 3.2f) > 0.25f ||
+        fabsf(tr.fov - 58.0f) > 0.01f) {
+        printf("FAIL: arc end pose (%.2f, %.2f, %.2f) fov=%.2f\n", tr.pos[0],
+               tr.pos[1], tr.pos[2], tr.fov);
+        return 1;
+    }
+
+    /* NULL pose snaps into place, identical to init. */
     ChaseCam snap;
     chase_cam_transition(&snap, car, 0.0f, NULL);
     if (fabsf(snap.pos[2] + 7.0f) > 0.25f || fabsf(snap.pos[1] - 3.2f) > 0.25f) {

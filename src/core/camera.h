@@ -26,4 +26,10 @@ void cam_rotate(FlyCam* cam, float dx, float dy);
 void cam_move(FlyCam* cam, int forward, int right, int up, float dt);
 void cam_update(FlyCam* cam, int width, int height);
 
+/*
+ * The pose the fly cam renders right now: eye, a look-at point 10m along its
+ * forward direction, and fov. For camera transitions (island1-38h3).
+ */
+void cam_pose(const FlyCam* cam, float pos[3], float look[3], float* fov);
+
 #endif

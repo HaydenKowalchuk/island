@@ -31,6 +31,18 @@ void cam_reset(FlyCam* cam) {
     cam->pitch = CAM_DEFAULT_PITCH;
 }
 
+void cam_pose(const FlyCam* cam, float pos[3], float look[3], float* fov) {
+    vec3 fwd;
+    cam_forward(cam, fwd);
+    pos[0] = cam->pos[0];
+    pos[1] = cam->pos[1];
+    pos[2] = cam->pos[2];
+    look[0] = cam->pos[0] + fwd[0] * 10.0f;
+    look[1] = cam->pos[1] + fwd[1] * 10.0f;
+    look[2] = cam->pos[2] + fwd[2] * 10.0f;
+    *fov = cam->fov;
+}
+
 void cam_init(FlyCam* cam) {
     cam_reset(cam);
     cam->speed = 10.0f;

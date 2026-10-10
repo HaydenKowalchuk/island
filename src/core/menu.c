@@ -227,3 +227,13 @@ void menu_cam_eye(float out[3]) {
     out[1] = s_eye[1];
     out[2] = s_eye[2];
 }
+
+void menu_cam_pose(float pos[3], float look[3], float *fov) {
+    pos[0] = s_eye[0];
+    pos[1] = s_eye[1];
+    pos[2] = s_eye[2];
+    look[0] = s_look[0];
+    look[1] = MENU_LOOK_H;
+    look[2] = s_look[1];
+    *fov = MENU_FOV;
+}

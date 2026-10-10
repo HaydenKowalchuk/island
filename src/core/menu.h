@@ -44,5 +44,8 @@ const float *menu_cam_view(void);
 const float *menu_cam_proj(void);
 /* Attract camera eye (test/F3 use); valid after menu_cam_update. */
 void menu_cam_eye(float out[3]);
+/* Attract pose (eye/look/fov) for a camera handover (island1-38h3); the eye
+ * is the last one menu_cam_update rendered. */
+void menu_cam_pose(float pos[3], float look[3], float *fov);
 
 #endif

@@ -742,6 +742,18 @@ int game_beacon_active(void) { return !quest_paused(); }
 
 const float *game_beacon_pos(void) { return active_target(); }
 
+/* The pose the chase camera renders right now (island1-38h3): eye and fov
+ * from the spring state, look-at on the subject. */
+static void chase_from_pose(CamPose *from, const float subject[3]) {
+  from->pos[0] = s_chase.pos[0];
+  from->pos[1] = s_chase.pos[1];
+  from->pos[2] = s_chase.pos[2];
+  from->look[0] = subject[0];
+  from->look[1] = subject[1];
+  from->look[2] = subject[2];
+  from->fov = s_chase.fov;
+}
+
 void game_place_vehicle(float x, float z, float heading) {
   car_init(&s_veh, x, z, heading);
   s_bank = 0.0f;
@@ -753,7 +765,9 @@ void game_place_vehicle(float x, float z, float heading) {
   s_veh.on_water = (g <= 0.0f);
 
   trail_clear();
-  chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, s_cam_pos);
+  CamPose from;
+  chase_from_pose(&from, s_veh.pos);
+  chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, &from);
 }
 
 /* Teleport the walking player (spawn/reset/tests). Snaps to the ground,
@@ -772,7 +786,9 @@ void game_place_player(float x, float z) {
   if (s_mode != MODE_FOOT) {
     s_mode = MODE_FOOT;
     apply_cam_framing();
-    chase_cam_transition(&s_chase, s_player.pos, s_player.heading, s_cam_pos);
+    CamPose from;
+    chase_from_pose(&from, s_player.pos);
+    chase_cam_transition(&s_chase, s_player.pos, s_player.heading, &from);
   }
 }
 
@@ -862,7 +878,9 @@ static void drive_car(float dt) {
   s_pitch = 0.0f;
   s_prev_speed_ms = 0.0f;
     trail_clear();
-    chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, s_cam_pos);
+    CamPose from;
+    chase_from_pose(&from, s_veh.pos);
+    chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, &from);
   }
 }
 
@@ -914,7 +932,9 @@ static void toggle_vehicle(void) {
       trail_clear();
       s_mode = MODE_FOOT;
       apply_cam_framing();
-      chase_cam_transition(&s_chase, s_player.pos, s_player.heading, s_cam_pos);
+      CamPose from;
+      chase_from_pose(&from, s_player.pos);
+      chase_cam_transition(&s_chase, s_player.pos, s_player.heading, &from);
       return;
     }
   } else {
@@ -929,7 +949,9 @@ static void toggle_vehicle(void) {
     s_veh.speed_kmh = 0.0f;
     trail_clear();
     apply_cam_framing();
-    chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, s_cam_pos);
+    CamPose from;
+    chase_from_pose(&from, s_veh.pos);
+    chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, &from);
   }
 }
 
@@ -1041,14 +1063,15 @@ void game_tick(float dt) {
   MenuScreen front = menu_screen();
   if (front != s_front_prev) {
     /* Camera transitions must lerp, never cut (island1-38h3): entering PLAY
-     * seeds the chase spring from wherever the camera is now (s_cam_pos, the
-     * last rendered eye — the attract view during the menu handover). */
+     * plays the arc from wherever the camera is — the attract pose during
+     * the menu handover. */
     if (front == MENU_SCREEN_PLAY && s_cam_mode == CAM_CHASE) {
+      CamPose from;
+      menu_cam_pose(from.pos, from.look, &from.fov);
       if (s_mode == MODE_FOOT)
-        chase_cam_transition(&s_chase, s_player.pos, s_player.heading,
-                             s_cam_pos);
+        chase_cam_transition(&s_chase, s_player.pos, s_player.heading, &from);
       else
-        chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, s_cam_pos);
+        chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, &from);
     }
     s_front_prev = front;
   }
@@ -1061,11 +1084,12 @@ void game_tick(float dt) {
       cam_reset(&s_cam);
     else {
       apply_cam_framing();
+      CamPose from;
+      cam_pose(&s_cam, from.pos, from.look, &from.fov);
       if (s_mode == MODE_FOOT)
-        chase_cam_transition(&s_chase, s_player.pos, s_player.heading,
-                             s_cam_pos);
+        chase_cam_transition(&s_chase, s_player.pos, s_player.heading, &from);
       else
-        chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, s_cam_pos);
+        chase_cam_transition(&s_chase, s_veh.pos, s_veh.heading, &from);
     }
   }
 
