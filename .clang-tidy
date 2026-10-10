@@ -1,3 +1,5 @@
+HeaderFilterRegex: '^((?!subprojects).)*$'
+
 Checks: >
     performance-*,
     misc-*,
@@ -28,4 +30,3 @@ ExtraArgs: [-std=c11,-DDEBUG]
 
 # IMPORTANT: Set HeaderFilterRegex as shown below.
 # Do not set it to '.*', for example.
-HeaderFilterRegex: ''
