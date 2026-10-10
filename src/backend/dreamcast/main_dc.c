@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <sys/time.h>
 
+#include "audio.h"
 #include "game.h"
 #include "input.h"
 #include "input_dc.h"
@@ -66,6 +67,9 @@ int main(int argc, char** argv) {
    * content built in game_init can request textures and have them uploaded
    * to PVR VRAM immediately. */
   render_init();
+  /* Audio brings up snd_stream + the MusicPlayer thread and preloads the
+   * SFX into AICA SARAM (island1-rau9); failure logs and stays silent. */
+  audio_init();
   game_init();
 
   float last_time = sys_time();
@@ -105,6 +109,7 @@ int main(int argc, char** argv) {
   }
 
   game_shutdown();
+  audio_shutdown();
   render_shutdown();
   /* Returning from main exits to the KOS loader / boot menu. */
   return 0;

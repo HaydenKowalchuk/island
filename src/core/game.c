@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "audio.h"
 #include "camera.h"
 #include "car.h"
 #include "chase_cam.h"
@@ -165,6 +166,10 @@ static vec3 s_depot;
 
 static float s_toast_timer = 0.0f;
 static const char* s_toast_msg = "+1  PACKAGE DELIVERED";
+/* Speed-scaled engine hum (island1-hq1q): one reserved looping voice for the
+ * whole session, ramped per-frame from drive_car and hushed whenever the car
+ * is not the controlled entity. NULL until first reserve (or headless). */
+static AudioVoice* s_engine_voice = NULL;
 static int s_delivery_house = -1; /* resident awaiting the open reaction */
 static int s_step_seq_seen = -1;  /* quest step entry hook (island1-f9x2) */
 static vec3 s_pkg_pos;
@@ -244,6 +249,7 @@ static const char* pick_line(const char* const* set, int cap, int speaker) {
 
 /* Package hand-off chatter: one of BREN's lines in the textbox. */
 static void start_keeper_talk(void) {
+  audio_play(AUDIO_SFX_UI_CONFIRM);
   const Dialogue* d = depot_dialogue();
   const char* line = pick_line(d->lines_idle, 4, RESIDENT_COUNT);
   const char* lines[1] = {line};
@@ -263,6 +269,7 @@ static void npc_tick(void) {
     s_toast_msg = "+1  PACKAGE DELIVERED";
     s_parcel_n = 0; /* sealed parcel handed over whole (island1-iim2) */
     quest_notify_deliver(s_delivery_house);
+    audio_play(AUDIO_SFX_DELIVERY);
   }
 
   s_talk_house = -1;
@@ -301,6 +308,7 @@ static void npc_tick(void) {
     if (t == QSTEP_TALK && s_talk_house == target)
       quest_notify_talk(s_talk_house); /* the talk objective is met */
   }
+  audio_play(AUDIO_SFX_UI_CONFIRM);
   const char* lines[1] = {line};
   dialog_start(d->name, lines, 1);
 }
@@ -338,6 +346,7 @@ static void quest_world_tick(float dt) {
     if (gift) {
       s_toast_msg = gift;
       s_toast_timer = TOAST_TIME;
+      audio_play(AUDIO_SFX_PICKUP);
     }
   }
 
@@ -351,11 +360,13 @@ static void quest_world_tick(float dt) {
       !dialog_active() && !quest_paused() && input_pressed(ACT_INTERACT)) {
     if (quest_step_type() == QSTEP_PICKUP && !quest_carried()) {
       quest_notify_pickup();
+      audio_play(AUDIO_SFX_PICKUP);
       start_keeper_talk(); /* BREN's hand-off voice (island1-9fm3). */
     } else if (quest_step_type() == QSTEP_CLAIM) {
       if (game_parcel_claim()) {
         s_toast_msg = "LOST PARCEL KEPT";
         s_toast_timer = TOAST_TIME;
+        audio_play(AUDIO_SFX_PICKUP);
       }
       quest_notify_claim();
     }
@@ -538,6 +549,7 @@ void game_init(void) {
   s_rng = 0x1234567u;
   s_toast_timer = 0.0f;
   s_toast_msg = "+1  PACKAGE DELIVERED";
+  s_engine_voice = NULL; /* any previous voice died with audio_reset/shutdown */
   s_talk_house = -1;
   s_delivery_pending = 0;
   s_delivery_house = -1;
@@ -603,6 +615,8 @@ void game_init(void) {
 }
 
 void game_shutdown(void) {
+  audio_voice_stop(s_engine_voice);
+  s_engine_voice = NULL;
   terrain_shutdown();
   mesh_destroy(&s_car);
   mesh_destroy(&s_parcel);
@@ -841,6 +855,13 @@ static void drive_car(float dt) {
   if (speed01 > 1.0f)
     speed01 = 1.0f;
 
+  /* Speed-scaled engine hum (island1-hq1q): reserve once, then push vol/pitch
+   * every frame -- idle burble at 0, full song at speed01=1. */
+  if (!s_engine_voice)
+    s_engine_voice = audio_reserve_loop(AUDIO_SFX_ENGINE);
+  audio_voice_update(s_engine_voice, 0.15f + 0.55f * speed01, 0.0f,
+                     0.6f + 0.8f * speed01);
+
   /*
    * Terrain-normal tilt (island1-9gio): sample fore/aft and abeam so the hull
    * skims the slope instead of holding a rigid horizon. Over water the surface
@@ -947,6 +968,8 @@ static void toggle_vehicle(void) {
       s_veh.speed_kmh = 0.0f;
       trail_clear();
       s_mode = MODE_FOOT;
+      audio_voice_stop(s_engine_voice);
+      s_engine_voice = NULL;
       apply_cam_framing();
       CamPose from;
       chase_from_pose(&from, s_player.pos);
@@ -1081,6 +1104,18 @@ void game_tick(float dt) {
     s_time += dt;
 
   if (front != s_front_prev) {
+    /* Music follows the front-end (island1-hq1q): title theme over MAIN
+     * (including the intro→title step), gameplay loop once PLAY starts; the
+     * pause menu silences the stream without tearing it down. */
+    if (front == MENU_SCREEN_MAIN)
+      audio_music_play(AUDIO_MUSIC_TITLE, 1);
+    else if (front == MENU_SCREEN_PLAY && s_front_prev == MENU_SCREEN_MAIN)
+      audio_music_play(AUDIO_MUSIC_GAMEPLAY, 1);
+    if (front == MENU_SCREEN_PAUSE)
+      audio_music_pause(1);
+    else if (s_front_prev == MENU_SCREEN_PAUSE)
+      audio_music_pause(0);
+
     /* Camera transitions must lerp, never cut (island1-38h3): entering PLAY
      * from the attract backdrop plays the arc from the drifting eye. Resuming
      * from the pause menu deliberately skips this — the gameplay camera was
@@ -1097,8 +1132,16 @@ void game_tick(float dt) {
     }
     s_front_prev = front;
   }
-  if (front != MENU_SCREEN_PLAY)
+
+  /* 3D listener rides the chase eye (island1-hq1q). The menu backdrop has
+   * its own camera, but engine hum is hushed off-PLAY and v1 has no other
+   * positional sources on the front-end, so the chase pose is enough. */
+  audio_listener(s_chase.pos, s_chase.heading_lag, s_chase.vel);
+
+  if (front != MENU_SCREEN_PLAY) {
+    audio_voice_update(s_engine_voice, 0.0f, 0.0f, 1.0f);
     return;
+  }
 
   if (input_pressed(ACT_DEV_CAM)) {
     s_cam_mode = (s_cam_mode == CAM_CHASE) ? CAM_FLY : CAM_CHASE;

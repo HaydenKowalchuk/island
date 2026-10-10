@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "audio.h"
 #include "chase_cam.h"
 #include "input.h"
 #include "inventory.h"
@@ -120,24 +121,31 @@ void menu_tick(float dt) {
       s_card_timer += dt;
       if (s_card_timer >= CARD_TIME)
         intro_next();
-      else if (any_pressed())
+      else if (any_pressed()) {
+        audio_play(AUDIO_SFX_UI_CONFIRM);
         intro_next(); /* one card per press; edges only, never held */
+      }
       break;
     case MENU_SCREEN_MAIN:
       /* Confirm or the throttle starts play — the attract hint invites the
        * throttle. Item selection/nav arrive with island1-lb8c. */
-      if (input_pressed(ACT_MENU_CONFIRM) || input_pressed(ACT_THROTTLE))
+      if (input_pressed(ACT_MENU_CONFIRM) || input_pressed(ACT_THROTTLE)) {
+        audio_play(AUDIO_SFX_UI_CONFIRM);
         s_screen = MENU_SCREEN_PLAY;
+      }
       break;
     case MENU_SCREEN_CONTROLS:
     case MENU_SCREEN_CREDITS:
-      if (input_pressed(ACT_MENU_BACK))
+      if (input_pressed(ACT_MENU_BACK)) {
+        audio_play(AUDIO_SFX_UI_BACK);
         s_screen = s_sub_from;
+      }
       break;
     case MENU_SCREEN_PLAY:
       /* Start (consoles) / P (desktop) opens the pause menu (island1-8nfp).
        * No back-exit in v1: ESC still quits through the backend. */
       if (input_pressed(ACT_PAUSE)) {
+        audio_play(AUDIO_SFX_UI_BACK);
         s_pause_sel = 0;
         s_screen = MENU_SCREEN_PAUSE;
       }
@@ -146,14 +154,20 @@ void menu_tick(float dt) {
       /* The pause key or BACK resumes; everything else is item navigation.
        * game.c freezes the sim and the camera while this screen is up. */
       if (input_pressed(ACT_PAUSE) || input_pressed(ACT_MENU_BACK)) {
+        audio_play(AUDIO_SFX_UI_BACK);
         s_screen = MENU_SCREEN_PLAY;
         break;
       }
-      if (input_pressed(ACT_MENU_UP))
+      if (input_pressed(ACT_MENU_UP)) {
+        audio_play(AUDIO_SFX_UI_MOVE);
         s_pause_sel = (s_pause_sel + PAUSE_COUNT - 1) % PAUSE_COUNT;
-      if (input_pressed(ACT_MENU_DOWN))
+      }
+      if (input_pressed(ACT_MENU_DOWN)) {
+        audio_play(AUDIO_SFX_UI_MOVE);
         s_pause_sel = (s_pause_sel + 1) % PAUSE_COUNT;
+      }
       if (input_pressed(ACT_MENU_CONFIRM)) {
+        audio_play(AUDIO_SFX_UI_CONFIRM);
         switch (s_pause_sel) {
           case 0:
             s_screen = MENU_SCREEN_PLAY;
@@ -174,8 +188,10 @@ void menu_tick(float dt) {
       }
       break;
     case MENU_SCREEN_INVENTORY:
-      if (input_pressed(ACT_MENU_BACK) || input_pressed(ACT_PAUSE))
+      if (input_pressed(ACT_MENU_BACK) || input_pressed(ACT_PAUSE)) {
+        audio_play(AUDIO_SFX_UI_BACK);
         s_screen = MENU_SCREEN_PAUSE;
+      }
       break;
     default:
       break;

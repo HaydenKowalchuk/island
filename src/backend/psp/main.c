@@ -21,6 +21,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "audio.h"
 #include "boot_kind.h"
 #include "game.h"
 #include "input.h"
@@ -294,6 +295,9 @@ int main(int argc, char** argv) {
   /* render_init installs the texture loader, so content built in game_init
    * can request textures and have them uploaded immediately. */
   render_init();
+  /* Null audio backend until island1-26pd picks the PSP strategy; the calls
+   * stay so wiring does not churn (island1-hq1q). */
+  audio_init();
   game_init();
 
   /* HUD/text rendering corrupts on real hardware; off until it is sorted. */
@@ -336,6 +340,7 @@ int main(int argc, char** argv) {
   }
 
   game_shutdown();
+  audio_shutdown();
   render_shutdown();
   sceKernelExitGame();
   return 0;

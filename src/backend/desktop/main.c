@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "audio.h"
 #include "game.h"
 #include "input.h"
 #include "input_glfw.h"
@@ -130,6 +131,9 @@ int main(int argc, char** argv) {
   /* render_init installs the texture loader, so content built in game_init
    * can request textures and have them uploaded immediately. */
   render_init();
+  /* Audio before game_init so the first menu/game ticks are never silent;
+   * a missing device logs and stays silent (island1-a9pu). */
+  audio_init();
   game_init();
 
   /* Hide the gameplay HUD with --no-hud or ISLAND_NO_HUD (screenshots, art). */
@@ -184,6 +188,7 @@ int main(int argc, char** argv) {
   }
 
   game_shutdown();
+  audio_shutdown();
   render_shutdown();
   glfwDestroyWindow(g_window);
   glfwTerminate();

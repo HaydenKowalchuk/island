@@ -5,9 +5,22 @@
 #   psp     -> pspsdk + sceGu/sceGum (native GE), packaged to EBOOT.PBP
 
 opt_platform = get_option('platform')
+fs = import('fs')
+
+# WAV sound masters live OUTSIDE the repo assets tree (island1-zozu): the
+# audio_assets checkout if present, else the .scratch placeholders from
+# tools/gen_audio.py. Desktop/PSP copy the .wav masters next to the textures
+# at build time; dreamcast converts them to .raw/.adpcm (see its branch).
+audio_master_root = ''
+if fs.is_dir(meson.project_source_root() / 'audio_assets' / 'audio')
+  audio_master_root = meson.project_source_root() / 'audio_assets'
+elif fs.is_dir(meson.project_source_root() / '.scratch' / 'audio_assets' / 'audio')
+  audio_master_root = meson.project_source_root() / '.scratch' / 'audio_assets'
+endif
 
 core_inc = include_directories('core')
 core_sources = files(
+  'core/audio.c',
   'core/camera.c',
   'core/car.c',
   'core/chase_cam.c',
@@ -26,10 +39,17 @@ core_sources = files(
   'core/texture.c',
 )
 
+# No-op audio backend for every GL-free test target: core_sources now
+# includes core/audio.c, whose backend_audio_* primitives must resolve
+# (island1-850o). The platform executables pull in their real backend
+# instead and never use this file.
+audio_null_source = files('backend/common/audio_null.c')
+
 if opt_platform == 'desktop'
 
   backend_inc = include_directories('backend/desktop', 'backend/common')
   backend_sources = files(
+    'backend/desktop/audio_desktop.c',
     'backend/desktop/gfx_gl.c',
     'backend/desktop/input_glfw.c',
     'backend/desktop/main.c',
@@ -49,10 +69,11 @@ if opt_platform == 'desktop'
     install: false,
   )
 
-  # Keep the art next to EBOOT.PBP. The loader also searches host0:/assets and
-  # ms0:/PSP/GAME/island/assets, so putting it here is just convenient.
+  # Keep the art (and sound masters) next to the binary; run.sh points
+  # ASSET_DIR at this build assets tree, and the loader's "assets" fallback
+  # resolves the same relative root.
   custom_target(
-    'psp-copy-assets',
+    'desktop-copy-assets',
     input: [],
     output: 'assets.stamp',
     # Always re-examined so adds/renames/deletes/content edits under assets/
@@ -62,7 +83,7 @@ if opt_platform == 'desktop'
     command: [
       find_program('sh'),
       '-c',
-      'if [ -f "$0" ] && diff -rq "$1" "$2/assets" >/dev/null 2>&1; then :; '
+      'if [ -f "$0" ] && diff -rq --exclude=audio "$1" "$2/assets" >/dev/null 2>&1; then :; '
       + 'else rm -rf "$2/assets" && cp -R "$1" "$2" && touch "$0"; fi',
       '@OUTPUT@',
       meson.project_source_root() / 'assets',
@@ -71,18 +92,47 @@ if opt_platform == 'desktop'
     build_by_default: true,
     build_always_stale: true,
   )
+
+  # Sound masters live outside assets/ (island1-zozu); copy the WAVs next to
+  # the textures so a plain `meson compile` leaves ASSET_DIR=<build>/assets
+  # fully populated -- desktop plays the masters directly, no conversion.
+  # Stamp bumps only when the master tree actually differs.
+  if audio_master_root != ''
+    custom_target(
+      'desktop-copy-audio',
+      input: [],
+      output: 'audio.stamp',
+      command: [
+        find_program('sh'),
+        '-c',
+        'stale=0; '
+        + 'if [ ! -f "$0" ]; then stale=1; '
+        + 'elif ! diff -rq "$1" "$2/assets/audio" >/dev/null 2>&1; then stale=1; fi; '
+        + 'if [ "$stale" = 1 ]; then rm -rf "$2/assets/audio" && mkdir -p "$2/assets" '
+        + '&& cp -R "$1" "$2/assets/audio" && touch "$0"; fi',
+        '@OUTPUT@',
+        audio_master_root / 'audio',
+        meson.current_build_dir(),
+      ],
+      build_by_default: true,
+      build_always_stale: true,
+    )
+  endif
 elif opt_platform == 'dreamcast'
   # Native KOS PVR backend. KOS headers come from the toolchain install;
   # the desktop backend dir is on the include path only for the shared
   # stb_image.h decoder.
   backend_inc = include_directories('backend/dreamcast', 'backend/common')
   backend_sources = files(
+    'backend/dreamcast/audio_dc.c',
     'backend/dreamcast/input_dc.c',
     'backend/dreamcast/main_dc.c',
     'backend/dreamcast/render_dc.c',
     'backend/dreamcast/texture_dc.c',
   )
-  platform_deps = [miniaudio_dep]
+  # DC audio is native KOS (snd_stream + sfxmgr, island1-rau9); miniaudio is
+  # no longer referenced by this platform's sources.
+  platform_deps = []
   platform_args = []
   platform_inc = [
     include_directories('backend/desktop'),
@@ -102,27 +152,61 @@ elif opt_platform == 'dreamcast'
     install: false,
   )
 
+  # WAV masters -> headerless DC formats (scripts/convert_audio.py): SFX to
+  # 8-bit mono 22050 .raw, music to interleaved AICA ADPCM via KOS wav2adpcm.
+  # Masters come from the audio_assets checkout (island1-zozu); the
+  # .scratch/audio_assets placeholders from tools/gen_audio.py are the
+  # fallback so a fresh clone can still hear something. Always-stale so edits
+  # to the masters are picked up on the next ninja run. audio_master_root is
+  # probed once at the top of this file.
+  dc_audio_sources = []
+  if audio_master_root != ''
+    dc_audio_sources = custom_target(
+      'dc-convert-audio',
+      input: [],
+      output: 'audio.stamp',
+      command: [
+        find_program('sh'),
+        '-c',
+        'python3 "$0" --src "$1" --out "$2" && touch "$3"',
+        meson.project_source_root() / 'scripts' / 'convert_audio.py',
+        audio_master_root,
+        meson.current_build_dir() / 'dc_audio_out',
+        '@OUTPUT@',
+      ],
+      build_by_default: true,
+      build_always_stale: true,
+      install: false,
+    )
+  endif
+
   # Keep the art next to the binary; the loader's "assets" fallback is the
-  # path that lands on the disc.
+  # path that lands on the disc. Converted audio is overlaid from
+  # dc_audio_out/ after the texture copy, and the stamp bumps when either
+  # the texture tree or the converted audio actually differs -- so the CDI
+  # only re-packages on real content changes, not every build.
   dc_copy_assets = custom_target(
     'dc-copy-assets',
     input: [],
     output: 'assets.stamp',
-    # Always re-examined so adds/renames/deletes/content edits under assets/
-    # are picked up (input: [] alone never re-ran after the first build).
-    # Only recopy + bump the stamp when the tree actually differs, so
-    # downstream targets keyed on the stamp don't rebuild on every ninja.
+    depends: dc_audio_sources,
     command: [
       find_program('sh'),
       '-c',
-      'if [ -f "$0" ] && diff -rq "$1" "$2/assets" >/dev/null 2>&1; then :; '
-      + 'else rm -rf "$2/assets" && cp -R "$1" "$2" && touch "$0"; fi',
+      'stale=0; '
+      + 'if [ ! -f "$0" ]; then stale=1; '
+      + 'elif ! diff -rq --exclude=audio "$1" "$2/assets" >/dev/null 2>&1; then stale=1; '
+      + 'elif [ -d "$3" ] && ! diff -rq "$3" "$2/assets/audio" >/dev/null 2>&1; then stale=1; fi; '
+      + 'if [ "$stale" = 1 ]; then rm -rf "$2/assets" && cp -R "$1" "$2"; '
+      + 'if [ -d "$3" ]; then cp -R "$3"/. "$2/assets/"; fi; touch "$0"; fi',
       '@OUTPUT@',
       meson.project_source_root() / 'assets',
       meson.current_build_dir(),
+      meson.current_build_dir() / 'dc_audio_out',
     ],
     build_by_default: true,
     build_always_stale: true,
+    install: false,
   )
 
   # Package into a DiscJuggler image (1ST_READ.BIN + IP.BIN + assets), ready
@@ -157,6 +241,9 @@ elif opt_platform == 'psp'
     'backend/psp/main.c',
     'backend/psp/render_gu.c',
     'backend/psp/texture_gu.c',
+    # Silent no-op audio backend until island1-26pd decides the PSP audio
+    # strategy; keeps core's audio_init() linkable with no device code.
+    'backend/common/audio_null.c',
     # Real MA_SUPPORT_PSP vtable (integrity's proven sceAudio glue). Only
     # compiled here -- desktop/dreamcast never define MA_SUPPORT_PSP, and
     # subprojects/miniaudio/miniaudio.h gates every reference to
@@ -265,7 +352,7 @@ endif
 # native: true keeps the tests running on the host during cross builds.
 api_smoke = executable(
   'api-smoke',
-  files('../tests/api_smoke.c') + core_sources,
+  files('../tests/api_smoke.c') + core_sources + audio_null_source,
   include_directories: [core_inc],
   dependencies: [cglm_dep, math_dep],
   install: false,
@@ -275,7 +362,7 @@ test('api-smoke', api_smoke)
 # GL-free test for the player mode state machine (on-foot/in-vehicle).
 mode_test = executable(
   'mode-test',
-  files('../tests/mode_test.c') + core_sources,
+  files('../tests/mode_test.c') + core_sources + audio_null_source,
   include_directories: [core_inc],
   dependencies: [cglm_dep, math_dep],
   install: false,
@@ -285,7 +372,7 @@ test('mode', mode_test)
 # GL-free test for the MVP delivery loop (island1-pkcj).
 quest_test = executable(
   'quest-test',
-  files('../tests/quest_test.c') + core_sources,
+  files('../tests/quest_test.c') + core_sources + audio_null_source,
   include_directories: [core_inc],
   dependencies: [cglm_dep, math_dep],
   install: false,
@@ -295,7 +382,7 @@ test('quest', quest_test)
 # GL-free test for the item registry + player inventory (island1-iim2).
 inventory_test = executable(
   'inventory-test',
-  files('../tests/inventory_test.c') + core_sources,
+  files('../tests/inventory_test.c') + core_sources + audio_null_source,
   include_directories: [core_inc],
   dependencies: [cglm_dep, math_dep],
   install: false,
@@ -316,7 +403,7 @@ test('input', input_test)
 # the intro, gameplay gated until PLAY, skip/confirm transitions, edges.
 menu_test = executable(
   'menu-test',
-  files('../tests/menu_test.c') + core_sources,
+  files('../tests/menu_test.c') + core_sources + audio_null_source,
   include_directories: [core_inc],
   dependencies: [cglm_dep, math_dep],
   install: false,
@@ -327,7 +414,7 @@ test('menu', menu_test)
 # props/particles/terrain culling together past FOG_END.
 lod_test = executable(
   'lod-test',
-  files('../tests/lod_test.c') + core_sources,
+  files('../tests/lod_test.c') + core_sources + audio_null_source,
   include_directories: [core_inc],
   dependencies: [cglm_dep, math_dep],
   install: false,
@@ -379,7 +466,7 @@ test('frustum', frustum_test)
 # GL-free test for terrain's per-island frustum + fog culling (island1-762c).
 terrain_cull_test = executable(
   'terrain-cull-test',
-  files('../tests/terrain_cull_test.c') + core_sources,
+  files('../tests/terrain_cull_test.c') + core_sources + audio_null_source,
   include_directories: [core_inc],
   dependencies: [cglm_dep, math_dep],
   install: false,
@@ -406,3 +493,15 @@ audio_smoke_test = executable(
   install: false,
 )
 test('audio-smoke', audio_smoke_test)
+
+# GL-free test for the audio core (island1-850o): positional math, the voice
+# pool with reserved-loop protection, bus re-application, headless no-op
+# contract. Links only the null backend -- no device, no GL.
+audio_test = executable(
+  'audio-test',
+  files('../tests/audio_test.c') + core_sources + audio_null_source,
+  include_directories: [core_inc],
+  dependencies: [cglm_dep, math_dep],
+  install: false,
+)
+test('audio', audio_test)
