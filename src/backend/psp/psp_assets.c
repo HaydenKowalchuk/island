@@ -22,8 +22,7 @@ static const char** asset_roots(void) {
   static const char* disc[] = {"disc0:/PSP_GAME/USRDIR/assets", "assets", NULL};
   static const char* host[] = {"host0:/assets", "assets", NULL};
   static const char* ms[] = {"ms0:/PSP/GAME/island/assets", "assets", NULL};
-  static const char* unknown[] = {"disc0:/PSP_GAME/USRDIR/assets", "host0:/assets",
-                                  "ms0:/PSP/GAME/island/assets", "assets", NULL};
+  static const char* unknown[] = {"disc0:/PSP_GAME/USRDIR/assets", "host0:/assets", "ms0:/PSP/GAME/island/assets", "assets", NULL};
   switch (psp_boot_kind()) {
     case BOOT_DISC:
       s_roots = disc;

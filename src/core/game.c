@@ -1719,15 +1719,14 @@ void game_render(float frame_dt) {
     menu_inventory_panel("TAB / SELECT CLOSE");
 
   if (s_hud && menu_screen() == MENU_SCREEN_PLAY) {
+    r_pass(R_PASS_HUD);
+#if (DEBUG && 0)
     int on_land = terrain_height_at(s_veh.pos[0], s_veh.pos[2]) > 0.0f;
     float pdx = s_player.pos[0] - s_veh.pos[0];
     float pdz = s_player.pos[2] - s_veh.pos[2];
+    s_veh.speed_kmh;
     int near_car = pdx * pdx + pdz * pdz <= VEHICLE_REACH * VEHICLE_REACH;
-    float speed_kmh =
-        (s_mode == MODE_FOOT) ? s_player.speed_kmh : s_veh.speed_kmh;
-
-    r_pass(R_PASS_HUD);
-    snprintf(buf, sizeof(buf), "%d KMH", (int)(speed_kmh + 0.5f));
+    float speed_kmh = (s_mode == MODE_FOOT) ? s_player.speed_kmh : snprintf(buf, sizeof(buf), "%d KMH", (int)(speed_kmh + 0.5f));
     r_text_2d(12, 10, 2.0f, s_mode == MODE_FOOT ? "ON FOOT" : "CHASE", white);
     r_text_2d(12, 32, 1.5f, buf, white);
     if (s_mode == MODE_FOOT)
@@ -1736,6 +1735,7 @@ void game_render(float frame_dt) {
       r_text_2d(12, 54, 1.0f, on_land ? "F GET OUT  F3 STATS" : "DRIVE TO LAND TO DISEMBARK", white);
     /* Pause discoverability (island1-8nfp): P on desktop, Start on consoles. */
     r_text_2d(12, 66, 1.0f, "P / START PAUSE", white);
+#endif
 
     /* Objective lines follow the current quest step (island1-f9x2). */
     const float* ap = active_pos();

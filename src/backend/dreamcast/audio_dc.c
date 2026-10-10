@@ -1,4 +1,8 @@
+#define __ARCH_TYPES_H
+typedef unsigned char uint8;
+typedef unsigned long uint32;
 #include <dc/sound/aica_comm.h>
+#undef __ARCH_TYPES_H
 #include <dc/sound/sfxmgr.h>
 #include <dc/sound/sound.h>
 #include <dc/sound/stream.h>

@@ -1,4 +1,3 @@
-#include "psp_assets.h"
 #include "texture_gu.h"
 
 #include <malloc.h> /* memalign (newlib) */
@@ -8,6 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "psp_assets.h"
 
 /*
  * PNG only keeps the vendored decoder small; all assets are 8-bit RGBA PNGs.
