@@ -13,8 +13,8 @@
 #define INV_STACK_MAX 99
 
 typedef struct {
-    uint16_t id;    /* ItemId; 0 = empty slot */
-    uint16_t count; /* 1..INV_STACK_MAX */
+  uint16_t id;    /* ItemId; 0 = empty slot */
+  uint16_t count; /* 1..INV_STACK_MAX */
 } InvSlot;
 
 void inv_init(void); /* reset to empty (game_init) */
@@ -32,7 +32,7 @@ int inv_remove(int id, int count);
 int inv_count(int id);
 
 /* i-th occupied slot in index order, or NULL past the end (HUD iteration). */
-const InvSlot *inv_slot(int i);
+const InvSlot* inv_slot(int i);
 
 /* Number of occupied slots. */
 int inv_used(void);

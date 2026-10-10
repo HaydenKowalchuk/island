@@ -1,11 +1,10 @@
 #include "render_gu.h"
 
-#include <string.h>
-
 #include <pspdisplay.h>
 #include <pspgu.h>
 #include <pspgum.h>
 #include <pspkernel.h>
+#include <string.h>
 
 #include "mesh.h"   /* core Mesh type */
 #include "render.h" /* core RenderAPI: r_frame(), RenderFrame, RDraw, RVertex */
@@ -118,18 +117,15 @@ typedef struct {
 } ClipVert;
 
 /* Column-major (GL/cglm) 4x4 times a vector. */
-static inline void mat4_mul_vec4(const ScePspFMatrix4 *m, float x, float y,
-                                 float z, float w, float *ox, float *oy,
-                                 float *oz, float *ow) {
-  const float *a = (const float *)m;
+static inline void mat4_mul_vec4(const ScePspFMatrix4* m, float x, float y, float z, float w, float* ox, float* oy, float* oz, float* ow) {
+  const float* a = (const float*)m;
   *ox = a[0] * x + a[4] * y + a[8] * z + a[12] * w;
   *oy = a[1] * x + a[5] * y + a[9] * z + a[13] * w;
   *oz = a[2] * x + a[6] * y + a[10] * z + a[14] * w;
   *ow = a[3] * x + a[7] * y + a[11] * z + a[15] * w;
 }
 
-static inline void clip_vert_lerp(const ClipVert *a, const ClipVert *b, float t,
-                                  ClipVert *out) {
+static inline void clip_vert_lerp(const ClipVert* a, const ClipVert* b, float t, ClipVert* out) {
   out->x = a->x + (b->x - a->x) * t;
   out->y = a->y + (b->y - a->y) * t;
   out->z = a->z + (b->z - a->z) * t;
@@ -142,8 +138,7 @@ static inline void clip_vert_lerp(const ClipVert *a, const ClipVert *b, float t,
 }
 
 /* Clip-space plane distances of an object-space point; >= 0 = inside. */
-static void clip_eval(const ScePspFMatrix4 *mvp, float x, float y, float z,
-                      float d[6]) {
+static void clip_eval(const ScePspFMatrix4* mvp, float x, float y, float z, float d[6]) {
   float cx, cy, cz, cw;
   mat4_mul_vec4(mvp, x, y, z, 1.0f, &cx, &cy, &cz, &cw);
   d[0] = cz + cw - PSP_CLIP_EPS; /* CLIP_NEAR */
@@ -161,8 +156,7 @@ static void clip_eval(const ScePspFMatrix4 *mvp, float x, float y, float z,
  * is exact) and let later planes keep classifying without re-evaluating
  * mvp. One pass turns an n-gon into at most n+1 vertices.
  */
-static int clip_pass(const ClipVert *vi, const float di[][6], int n, int p,
-                     ClipVert *vo, float dop[][6]) {
+static int clip_pass(const ClipVert* vi, const float di[][6], int n, int p, ClipVert* vo, float dop[][6]) {
   int m = 0;
   for (int i = 0; i < n; i++) {
     int j = (i + 1) % n;
@@ -195,7 +189,7 @@ static float clip_shade8(unsigned h) {
 
 /* Tint a clipped polygon by its clip code (odd multipliers mod 256 keep
  * distinct codes on distinct colours, floored bright enough to see). */
-static void clip_code_tint(int code, ClipVert *v, int n) {
+static void clip_code_tint(int code, ClipVert* v, int n) {
   if (!code)
     return;
   unsigned h = (unsigned)code;
@@ -236,14 +230,14 @@ static unsigned int pack_rgba(const float c[4]) {
   return (a << 24) | (b << 16) | (g << 8) | r;
 }
 
-static void shade4(const RVertex *v, const float tint[4], float out[4]) {
+static void shade4(const RVertex* v, const float tint[4], float out[4]) {
   out[0] = v->r * tint[0];
   out[1] = v->g * tint[1];
   out[2] = v->b * tint[2];
   out[3] = v->a * tint[3];
 }
 
-static unsigned int shade(const RVertex *v, const float tint[4]) {
+static unsigned int shade(const RVertex* v, const float tint[4]) {
   float c[4];
   shade4(v, tint, c);
   return pack_rgba(c);
@@ -310,10 +304,9 @@ static void set_cull(int on) {
 }
 
 /* out = a * b, column-major. out must not alias a or b. */
-static void mat4_mul4(const ScePspFMatrix4 *a, const ScePspFMatrix4 *b,
-                      ScePspFMatrix4 *out) {
-  const float *A = (const float *)a;
-  const float *B = (const float *)b;
+static void mat4_mul4(const ScePspFMatrix4* a, const ScePspFMatrix4* b, ScePspFMatrix4* out) {
+  const float* A = (const float*)a;
+  const float* B = (const float*)b;
   float o[16];
   for (int c = 0; c < 4; c++) {
     for (int r = 0; r < 4; r++) {
@@ -324,7 +317,7 @@ static void mat4_mul4(const ScePspFMatrix4 *a, const ScePspFMatrix4 *b,
   memcpy(out, o, sizeof(o));
 }
 
-static void use_world(const RenderFrame *f) {
+static void use_world(const RenderFrame* f) {
   if (s_mode == 0)
     return;
   memcpy(&s_proj, f->proj, sizeof(s_proj));
@@ -342,8 +335,7 @@ static void use_screen(void) {
   s_mode = 1;
 }
 
-static void apply_state(const RenderFrame *f, const RDraw *d, int textured,
-                        int screen) {
+static void apply_state(const RenderFrame* f, const RDraw* d, int textured, int screen) {
   use_world(f);
   if (screen)
     use_screen();
@@ -363,8 +355,7 @@ static void apply_state(const RenderFrame *f, const RDraw *d, int textured,
   set_tex(textured);
 }
 
-static void clip_vert_from(const RVertex *s, const float tint[4],
-                           ClipVert *out) {
+static void clip_vert_from(const RVertex* s, const float tint[4], ClipVert* out) {
   float c[4];
   shade4(s, tint, c);
   out->x = s->x;
@@ -378,7 +369,7 @@ static void clip_vert_from(const RVertex *s, const float tint[4],
   out->v = s->v;
 }
 
-static void emit_v(const ClipVert *v, GuVtx *out, int *n) {
+static void emit_v(const ClipVert* v, GuVtx* out, int* n) {
   float c[4] = {v->r, v->g, v->b, v->a};
   out[*n].color = pack_rgba(c);
   out[*n].x = v->x;
@@ -387,7 +378,7 @@ static void emit_v(const ClipVert *v, GuVtx *out, int *n) {
   (*n)++;
 }
 
-static void emit_v_tex(const ClipVert *v, GuTexVtx *out, int *n) {
+static void emit_v_tex(const ClipVert* v, GuTexVtx* out, int* n) {
   float c[4] = {v->r, v->g, v->b, v->a};
   out[*n].u = v->u;
   out[*n].v = v->v;
@@ -398,7 +389,7 @@ static void emit_v_tex(const ClipVert *v, GuTexVtx *out, int *n) {
   (*n)++;
 }
 
-static void emit_rv(const RVertex *s, const float *tint, GuVtx *out, int *n) {
+static void emit_rv(const RVertex* s, const float* tint, GuVtx* out, int* n) {
   out[*n].color = shade(s, tint);
   out[*n].x = s->x;
   out[*n].y = s->y;
@@ -414,8 +405,7 @@ static void emit_rv(const RVertex *s, const float *tint, GuVtx *out, int *n) {
  * convex polygon's vertex count (0 = fully outside one plane, same as the
  * GE's whole-primitive cull) and hands back the clip code for the tint.
  */
-static int clip_obj_tri(const ClipVert obj[3], const ScePspFMatrix4 *mvp,
-                        ClipVert out[CLIP_MAX_POLY], int *code_out) {
+static int clip_obj_tri(const ClipVert obj[3], const ScePspFMatrix4* mvp, ClipVert out[CLIP_MAX_POLY], int* code_out) {
   *code_out = 0;
   if (!mvp) {
     out[0] = obj[0];
@@ -452,7 +442,7 @@ static int clip_obj_tri(const ClipVert obj[3], const ScePspFMatrix4 *mvp,
     if (!(code & (1 << p)))
       continue;
     int m = clip_pass(src, srcd, n, p, dst, dstd);
-    ClipVert *tv = src;
+    ClipVert* tv = src;
     src = dst;
     dst = tv;
     float (*td)[6] = srcd;
@@ -473,8 +463,7 @@ static int clip_obj_tri(const ClipVert obj[3], const ScePspFMatrix4 *mvp,
  * strip's own triangles (even index: i,i+1,i+2; odd: i+1,i,i+2) reproduce
  * the polygon's winding with no shared hub vertex.
  */
-static int poly_strip_order(const ClipVert *p, int n,
-                            ClipVert s[CLIP_MAX_POLY]) {
+static int poly_strip_order(const ClipVert* p, int n, ClipVert s[CLIP_MAX_POLY]) {
   int ns = 0;
   s[ns++] = p[0];
   s[ns++] = p[1];
@@ -489,36 +478,35 @@ static int poly_strip_order(const ClipVert *p, int n,
 
 /* Clipped polygon -> plain triangle list (strip order, strip-parity winding).
  */
-static void emit_poly_tris(const ClipVert *poly, int n, GuVtx *out, int *idx) {
+static void emit_poly_tris(const ClipVert* poly, int n, GuVtx* out, int* idx) {
   ClipVert s[CLIP_MAX_POLY];
   int ns = poly_strip_order(poly, n, s);
   for (int i = 0; i + 2 < ns; i++) {
-    const ClipVert *a = (i & 1) ? &s[i + 1] : &s[i];
-    const ClipVert *b = (i & 1) ? &s[i] : &s[i + 1];
-    const ClipVert *c = &s[i + 2];
+    const ClipVert* a = (i & 1) ? &s[i + 1] : &s[i];
+    const ClipVert* b = (i & 1) ? &s[i] : &s[i + 1];
+    const ClipVert* c = &s[i + 2];
     emit_v(a, out, idx);
     emit_v(b, out, idx);
     emit_v(c, out, idx);
   }
 }
 
-static void emit_poly_tris_tex(const ClipVert *poly, int n, GuTexVtx *out,
-                               int *idx) {
+static void emit_poly_tris_tex(const ClipVert* poly, int n, GuTexVtx* out, int* idx) {
   ClipVert s[CLIP_MAX_POLY];
   int ns = poly_strip_order(poly, n, s);
   for (int i = 0; i + 2 < ns; i++) {
-    const ClipVert *a = (i & 1) ? &s[i + 1] : &s[i];
-    const ClipVert *b = (i & 1) ? &s[i] : &s[i + 1];
-    const ClipVert *c = &s[i + 2];
+    const ClipVert* a = (i & 1) ? &s[i + 1] : &s[i];
+    const ClipVert* b = (i & 1) ? &s[i] : &s[i + 1];
+    const ClipVert* c = &s[i + 2];
     emit_v_tex(a, out, idx);
     emit_v_tex(b, out, idx);
     emit_v_tex(c, out, idx);
   }
 }
 
-static void present_recorded(const RenderFrame *f, const RDraw *d, int screen) {
-  const RVertex *v = &f->verts[d->first];
-  const float *tint = d->tint;
+static void present_recorded(const RenderFrame* f, const RDraw* d, int screen) {
+  const RVertex* v = &f->verts[d->first];
+  const float* tint = d->tint;
   int count = d->count;
   if (count <= 0)
     return;
@@ -530,20 +518,19 @@ static void present_recorded(const RenderFrame *f, const RDraw *d, int screen) {
   if (d->prim == R_LINES) {
     /* Lines copy through: only triangles near the eye need the clip path
      * (see the near-plane clip comment). */
-    GuVtx *out = (GuVtx *)sceGuGetMemory((unsigned int)count * sizeof(GuVtx));
+    GuVtx* out = (GuVtx*)sceGuGetMemory((unsigned int)count * sizeof(GuVtx));
     for (int i = 0; i < count; i++) {
       out[i].color = shade(&v[i], tint);
       out[i].x = v[i].x;
       out[i].y = v[i].y;
       out[i].z = v[i].z;
     }
-    sceGuDrawArray(GU_LINES, GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D,
-                   count, NULL, out);
+    sceGuDrawArray(GU_LINES, GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D, count, NULL, out);
     return;
   }
 
   ScePspFMatrix4 mvp;
-  const ScePspFMatrix4 *clip_mvp = NULL;
+  const ScePspFMatrix4* clip_mvp = NULL;
   if (!screen) {
     mat4_mul4(&s_proj, &s_view, &mvp);
     clip_mvp = &mvp;
@@ -583,9 +570,9 @@ static void present_recorded(const RenderFrame *f, const RDraw *d, int screen) {
        * for any projected quad. Consecutive quads join through degenerate
        * vertices so the next quad's first triangle lands on an even index. */
       int cap = count + 3 * (nseg + 2);
-      GuVtx *out = (GuVtx *)sceGuGetMemory((unsigned int)cap * sizeof(GuVtx));
+      GuVtx* out = (GuVtx*)sceGuGetMemory((unsigned int)cap * sizeof(GuVtx));
       for (int q = 0; q + 4 <= count; q += 4) {
-        const RVertex *Q = &v[q];
+        const RVertex* Q = &v[q];
         if (n > 0) {
           int L = n;
           /* Y = the previous quad's last strip vertex (its q3). */
@@ -601,16 +588,20 @@ static void present_recorded(const RenderFrame *f, const RDraw *d, int screen) {
       }
       if (n > 0) {
         sceGuDrawArray(GU_TRIANGLE_STRIP,
-                       GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D, n,
-                       NULL, out);
+                       GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D,
+                       n,
+                       NULL,
+                       out);
       }
       return;
     }
-    GuVtx *out = (GuVtx *)sceGuGetMemory((unsigned int)count * sizeof(GuVtx));
+    GuVtx* out = (GuVtx*)sceGuGetMemory((unsigned int)count * sizeof(GuVtx));
     for (int i = 0; i < count; i++)
       emit_rv(&v[i], tint, out, &n);
     sceGuDrawArray(GU_TRIANGLES,
-                   GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D, n, NULL,
+                   GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D,
+                   n,
+                   NULL,
                    out);
     return;
   }
@@ -621,8 +612,8 @@ static void present_recorded(const RenderFrame *f, const RDraw *d, int screen) {
    * reads display-list RAM later, so the data has to live there), sized so
    * the list only reserves what is actually written — a worst-case
    * ntri * 21 allocation could overrun it. */
-  const int *order = (step == 4) ? quad_idx : tri_idx;
-  GuVtx *out = NULL;
+  const int* order = (step == 4) ? quad_idx : tri_idx;
+  GuVtx* out = NULL;
   int capn = 0;
   n = 0;
   for (int q = 0; q + step <= count; q += step) {
@@ -638,8 +629,10 @@ static void present_recorded(const RenderFrame *f, const RDraw *d, int screen) {
           if (n > 0)
             sceGuDrawArray(GU_TRIANGLES,
                            GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D,
-                           n, NULL, out);
-          out = (GuVtx *)sceGuGetMemory(CLIP_STAGE * sizeof(GuVtx));
+                           n,
+                           NULL,
+                           out);
+          out = (GuVtx*)sceGuGetMemory(CLIP_STAGE * sizeof(GuVtx));
           capn = CLIP_STAGE;
           n = 0;
         }
@@ -649,13 +642,15 @@ static void present_recorded(const RenderFrame *f, const RDraw *d, int screen) {
   }
   if (n > 0) {
     sceGuDrawArray(GU_TRIANGLES,
-                   GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D, n, NULL,
+                   GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D,
+                   n,
+                   NULL,
                    out);
   }
 }
 
-static void present_mesh(const RenderFrame *f, const RDraw *d) {
-  const Mesh *m = d->mesh;
+static void present_mesh(const RenderFrame* f, const RDraw* d) {
+  const Mesh* m = d->mesh;
   if (!m || m->index_count <= 0 || m->vert_count <= 0)
     return;
 
@@ -674,7 +669,7 @@ static void present_mesh(const RenderFrame *f, const RDraw *d) {
    * proj * view * model itself, so object-space clip lerps stay in mesh
    * space and ride the model matrix like everything else. */
   ScePspFMatrix4 pv, mvp;
-  const ScePspFMatrix4 *clip_mvp = NULL;
+  const ScePspFMatrix4* clip_mvp = NULL;
   mat4_mul4(&s_proj, &s_view, &pv);
   mat4_mul4(&pv, &s_model, &mvp);
   clip_mvp = &mvp;
@@ -688,7 +683,7 @@ static void present_mesh(const RenderFrame *f, const RDraw *d) {
   int needs_clip = 0;
   if (clip_mvp) {
     for (int i = 0; i < m->vert_count; i++) {
-      const RVertex *s = &m->verts[i];
+      const RVertex* s = &m->verts[i];
       float d[6];
       clip_eval(clip_mvp, s->x, s->y, s->z, d);
       for (int p = 0; p < 6; p++) {
@@ -704,16 +699,15 @@ static void present_mesh(const RenderFrame *f, const RDraw *d) {
 
   if (!needs_clip) {
     /* Indices also come from the display list; copy them fresh each draw. */
-    unsigned short *indices = (unsigned short *)sceGuGetMemory(
+    unsigned short* indices = (unsigned short*)sceGuGetMemory(
         (unsigned int)m->index_count * sizeof(unsigned short));
-    memcpy(indices, m->indices,
-           (size_t)m->index_count * sizeof(unsigned short));
+    memcpy(indices, m->indices, (size_t)m->index_count * sizeof(unsigned short));
 
     if (textured) {
-      GuTexVtx *out = (GuTexVtx *)sceGuGetMemory((unsigned int)m->vert_count *
-                                                 sizeof(GuTexVtx));
+      GuTexVtx* out = (GuTexVtx*)sceGuGetMemory((unsigned int)m->vert_count *
+                                                sizeof(GuTexVtx));
       for (int i = 0; i < m->vert_count; i++) {
-        const RVertex *s = &m->verts[i];
+        const RVertex* s = &m->verts[i];
         out[i].u = s->u;
         out[i].v = s->v;
         out[i].color = shade(s, d->tint);
@@ -724,12 +718,14 @@ static void present_mesh(const RenderFrame *f, const RDraw *d) {
       sceGuDrawArray(GU_TRIANGLES,
                      GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF |
                          GU_INDEX_16BIT | GU_TRANSFORM_3D,
-                     m->index_count, indices, out);
+                     m->index_count,
+                     indices,
+                     out);
     } else {
-      GuVtx *out =
-          (GuVtx *)sceGuGetMemory((unsigned int)m->vert_count * sizeof(GuVtx));
+      GuVtx* out =
+          (GuVtx*)sceGuGetMemory((unsigned int)m->vert_count * sizeof(GuVtx));
       for (int i = 0; i < m->vert_count; i++) {
-        const RVertex *s = &m->verts[i];
+        const RVertex* s = &m->verts[i];
         out[i].color = shade(s, d->tint);
         out[i].x = s->x;
         out[i].y = s->y;
@@ -738,7 +734,9 @@ static void present_mesh(const RenderFrame *f, const RDraw *d) {
       sceGuDrawArray(GU_TRIANGLES,
                      GU_COLOR_8888 | GU_VERTEX_32BITF | GU_INDEX_16BIT |
                          GU_TRANSFORM_3D,
-                     m->index_count, indices, out);
+                     m->index_count,
+                     indices,
+                     out);
     }
     return;
   }
@@ -747,7 +745,7 @@ static void present_mesh(const RenderFrame *f, const RDraw *d) {
   int n = 0;
 
   if (textured) {
-    GuTexVtx *out = NULL;
+    GuTexVtx* out = NULL;
     int capn = 0;
     for (int i = 0; i < ntri; i++) {
       ClipVert tri[3], poly[CLIP_MAX_POLY];
@@ -762,8 +760,10 @@ static void present_mesh(const RenderFrame *f, const RDraw *d) {
             sceGuDrawArray(GU_TRIANGLES,
                            GU_TEXTURE_32BITF | GU_COLOR_8888 |
                                GU_VERTEX_32BITF | GU_TRANSFORM_3D,
-                           n, NULL, out);
-          out = (GuTexVtx *)sceGuGetMemory(CLIP_STAGE * sizeof(GuTexVtx));
+                           n,
+                           NULL,
+                           out);
+          out = (GuTexVtx*)sceGuGetMemory(CLIP_STAGE * sizeof(GuTexVtx));
           capn = CLIP_STAGE;
           n = 0;
         }
@@ -774,10 +774,12 @@ static void present_mesh(const RenderFrame *f, const RDraw *d) {
       sceGuDrawArray(GU_TRIANGLES,
                      GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF |
                          GU_TRANSFORM_3D,
-                     n, NULL, out);
+                     n,
+                     NULL,
+                     out);
     }
   } else {
-    GuVtx *out = NULL;
+    GuVtx* out = NULL;
     int capn = 0;
     for (int i = 0; i < ntri; i++) {
       ClipVert tri[3], poly[CLIP_MAX_POLY];
@@ -791,8 +793,10 @@ static void present_mesh(const RenderFrame *f, const RDraw *d) {
           if (n > 0)
             sceGuDrawArray(GU_TRIANGLES,
                            GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D,
-                           n, NULL, out);
-          out = (GuVtx *)sceGuGetMemory(CLIP_STAGE * sizeof(GuVtx));
+                           n,
+                           NULL,
+                           out);
+          out = (GuVtx*)sceGuGetMemory(CLIP_STAGE * sizeof(GuVtx));
           capn = CLIP_STAGE;
           n = 0;
         }
@@ -801,8 +805,10 @@ static void present_mesh(const RenderFrame *f, const RDraw *d) {
     }
     if (n > 0) {
       sceGuDrawArray(GU_TRIANGLES,
-                     GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D, n,
-                     NULL, out);
+                     GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D,
+                     n,
+                     NULL,
+                     out);
     }
   }
 }
@@ -822,9 +828,9 @@ static void reset_ge_state(void) {
 void render_init(void) {
   sceGuInit();
 
-  void *fbp0 = guGetStaticVramBuffer(BUF_WIDTH, SCR_HEIGHT, GU_PSM_5650);
-  void *fbp1 = guGetStaticVramBuffer(BUF_WIDTH, SCR_HEIGHT, GU_PSM_5650);
-  void *zbp = guGetStaticVramBuffer(BUF_WIDTH, SCR_HEIGHT, GU_PSM_4444);
+  void* fbp0 = guGetStaticVramBuffer(BUF_WIDTH, SCR_HEIGHT, GU_PSM_5650);
+  void* fbp1 = guGetStaticVramBuffer(BUF_WIDTH, SCR_HEIGHT, GU_PSM_5650);
+  void* zbp = guGetStaticVramBuffer(BUF_WIDTH, SCR_HEIGHT, GU_PSM_4444);
 
   sceGuStart(GU_DIRECT, s_list);
   sceGuDrawBuffer(GU_PSM_5650, fbp0, BUF_WIDTH);
@@ -870,7 +876,7 @@ void render_shutdown(void) {
 }
 
 void render_present(int fb_w, int fb_h) {
-  const RenderFrame *f = r_frame();
+  const RenderFrame* f = r_frame();
   (void)fb_w;
   (void)fb_h;
 
@@ -884,7 +890,7 @@ void render_present(int fb_w, int fb_h) {
   sceGuFog(f->fog_start, f->fog_end, pack_rgba(f->fog_color));
 
   for (int i = 0; i < f->draw_count; i++) {
-    const RDraw *d = &f->draws[i];
+    const RDraw* d = &f->draws[i];
     if (d->mesh) {
       present_mesh(f, d);
     } else {

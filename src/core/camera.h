@@ -1,23 +1,23 @@
 #ifndef ISLAND_CORE_CAMERA_H
 #define ISLAND_CORE_CAMERA_H
 
-#include <stdbool.h>
 #include <cglm/cglm.h>
+#include <stdbool.h>
 
 typedef struct {
-    vec3 pos;
-    float yaw;   /* degrees, 0 = +X, increases toward +Z */
-    float pitch; /* degrees, clamped to (-89, 89) */
+  vec3 pos;
+  float yaw;   /* degrees, 0 = +X, increases toward +Z */
+  float pitch; /* degrees, clamped to (-89, 89) */
 
-    float speed;
-    float sensitivity;
-    float fov;   /* vertical, degrees */
-    float znear;
-    float zfar;
+  float speed;
+  float sensitivity;
+  float fov; /* vertical, degrees */
+  float znear;
+  float zfar;
 
-    mat4 view;
-    mat4 proj;
-    mat4 viewproj;
+  mat4 view;
+  mat4 proj;
+  mat4 viewproj;
 } FlyCam;
 
 void cam_init(FlyCam* cam);

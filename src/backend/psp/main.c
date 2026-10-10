@@ -11,23 +11,21 @@
  */
 
 #include <errno.h>
+#include <pspdisplay.h>
+#include <pspgu.h>
+#include <pspiofilemgr.h>
+#include <pspkernel.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#include <pspdisplay.h>
-#include <pspgu.h>
-#include <pspiofilemgr.h>
-#include <pspkernel.h>
-
 #include "boot_kind.h"
 #include "game.h"
 #include "input.h"
-#include "render_gu.h"
-
 #include "psp_setup.h"
+#include "render_gu.h"
 
 #define SCR_W 480
 #define SCR_H 272
@@ -49,11 +47,15 @@ static float now_seconds(void) {
 /* Enum + rationale live in boot_kind.h; storage is shared with texture_gu. */
 static enum boot_kind s_boot_kind = BOOT_UNKNOWN;
 
-enum boot_kind psp_boot_kind(void) { return s_boot_kind; }
+enum boot_kind psp_boot_kind(void) {
+  return s_boot_kind;
+}
 
-void psp_set_boot_kind(enum boot_kind kind) { s_boot_kind = kind; }
+void psp_set_boot_kind(enum boot_kind kind) {
+  s_boot_kind = kind;
+}
 
-static enum boot_kind kind_of(const char *dev) {
+static enum boot_kind kind_of(const char* dev) {
   if (!dev)
     return BOOT_UNKNOWN;
   if (!strcmp(dev, "host0:"))
@@ -65,28 +67,28 @@ static enum boot_kind kind_of(const char *dev) {
   return BOOT_UNKNOWN;
 }
 
-static const char *kind_name(enum boot_kind k) {
+static const char* kind_name(enum boot_kind k) {
   switch (k) {
-  case BOOT_HOST:
-    return "host (dev tree)";
-  case BOOT_DISC:
-    return "disc (umd/iso)";
-  case BOOT_MEMSTICK:
-    return "memstick (pbp)";
-  default:
-    return "unknown";
+    case BOOT_HOST:
+      return "host (dev tree)";
+    case BOOT_DISC:
+      return "disc (umd/iso)";
+    case BOOT_MEMSTICK:
+      return "memstick (pbp)";
+    default:
+      return "unknown";
   }
 }
 
 /* argv strings live in user RAM; reject NULL, kernel pointers and error
  * codes masquerading as pointers before dereferencing. */
-static int user_str(const char *p) {
+static int user_str(const char* p) {
   uintptr_t v = (uintptr_t)p;
   return p && v >= 0x08000000u && v < 0x0C000000u;
 }
 
 /* Case-insensitive basename-compare without dragging in strcasecmp. */
-static int ieq(const char *a, const char *b) {
+static int ieq(const char* a, const char* b) {
   for (; *a && *b; a++, b++) {
     int ca = *a, cb = *b;
     if (ca >= 'A' && ca <= 'Z')
@@ -100,12 +102,11 @@ static int ieq(const char *a, const char *b) {
 }
 
 /* Device prefix of a path, or NULL if it does not look like one. */
-static const char *path_dev(const char *p) {
+static const char* path_dev(const char* p) {
   if (!user_str(p))
     return NULL;
-  static const char *devs[] = {
-      "ms0:",   "ms1:",    "ms2:",    "ef0:",       "disc0:", "umd0:",
-      "host0:", "flash0:", "flash1:", "kemulator:", NULL};
+  static const char* devs[] = {
+      "ms0:", "ms1:", "ms2:", "ef0:", "disc0:", "umd0:", "host0:", "flash0:", "flash1:", "kemulator:", NULL};
   for (int i = 0; devs[i]; i++) {
     if (!devs[i]) {
       return NULL;
@@ -119,16 +120,16 @@ static const char *path_dev(const char *p) {
 
 /* Executable flavour from a path: EBOOT.BIN (disc game), BOOT.BIN (disc
  * homebrew), EBOOT.PBP (PBP), *.prx (raw module), or the plain basename. */
-static const char *exe_kind(const char *p) {
+static const char* exe_kind(const char* p) {
   if (!p)
     return "(none)";
   if (!user_str(p))
     return "(not a user pointer)";
   if (!memchr(p, 0, 256))
     return "(unterminated)";
-  const char *base = strrchr(p, '/');
+  const char* base = strrchr(p, '/');
   base = base ? base + 1 : p;
-  const char *ext = strrchr(base, '.');
+  const char* ext = strrchr(base, '.');
   if (ieq(base, "EBOOT.BIN"))
     return "EBOOT.BIN (disc game bootstrap)";
   if (ieq(base, "BOOT.BIN"))
@@ -147,30 +148,29 @@ static const char *exe_kind(const char *p) {
  * host0:/ms0:/ef0:/island_boot.txt because real hardware has no console
  * when running from a disc image.
  */
-static enum boot_kind boot_report(int argc, char **argv) {
+static enum boot_kind boot_report(int argc, char** argv) {
   char buf[2048];
   char cwd[256];
   int n = 0;
   memset(buf, 0, sizeof(buf));
   memset(cwd, 0, sizeof(cwd));
-#define ADD(...)                                                               \
-  do {                                                                         \
-    if (n >= 0 && n < (int)sizeof(buf))                                        \
-      n += snprintf(buf + n, sizeof(buf) - (size_t)n, __VA_ARGS__);            \
+#define ADD(...)                                                    \
+  do {                                                              \
+    if (n >= 0 && n < (int)sizeof(buf))                             \
+      n += snprintf(buf + n, sizeof(buf) - (size_t)n, __VA_ARGS__); \
   } while (0)
 
   if (!getcwd(cwd, sizeof(cwd)))
     snprintf(cwd, sizeof(cwd), "(getcwd failed)");
 
-  const char *argv0 = (argc > 0 && argv && argv[0]) ? argv[0] : NULL;
-  const char *src_dev = path_dev(argv0) ? path_dev(argv0) : path_dev(cwd);
+  const char* argv0 = (argc > 0 && argv && argv[0]) ? argv[0] : NULL;
+  const char* src_dev = path_dev(argv0) ? path_dev(argv0) : path_dev(cwd);
   enum boot_kind kind = kind_of(src_dev);
   psp_set_boot_kind(kind);
 
   ADD("[boot] argc=%d\n", argc);
   for (int i = 0; i < argc && i < 8; i++)
-    ADD("[boot] argv[%d]=%s\n", i,
-        user_str(argv[i]) ? argv[i] : "(unreadable)");
+    ADD("[boot] argv[%d]=%s\n", i, user_str(argv[i]) ? argv[i] : "(unreadable)");
   ADD("[boot] cwd=%s\n", cwd);
   ADD("[boot] kind=%s\n", kind_name(kind));
   ADD("[boot] argv[0] flavour=%s\n", exe_kind(argv0));
@@ -188,11 +188,11 @@ static enum boot_kind boot_report(int argc, char **argv) {
   }
   /* Ground truth: rel vs abs, stdio vs raw sceIo, plus what the firmware
    * directory reader actually sees on the disc. */
-  static const char *rel_p = "assets/textures/parcel_32.png";
-  static const char *abs_p =
+  static const char* rel_p = "assets/textures/parcel_32.png";
+  static const char* abs_p =
       "disc0:/PSP_GAME/USRDIR/assets/textures/parcel_32.png";
-  static const char *ctl_p = "disc0:/PSP_GAME/SYSDIR/EBOOT.BIN";
-  FILE *pf;
+  static const char* ctl_p = "disc0:/PSP_GAME/SYSDIR/EBOOT.BIN";
+  FILE* pf;
 
   errno = 0;
   pf = fopen(rel_p, "rb");
@@ -280,7 +280,7 @@ static enum boot_kind boot_report(int argc, char **argv) {
   return kind;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   psp_setup_callbacks();
   setbuf(stdout, NULL);
 

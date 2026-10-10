@@ -11,39 +11,42 @@
  */
 
 /* Art/game configuration. Sky doubles as fog colour so the horizon is seamless. */
-#define SKY_COLOR_R  0.45f
-#define SKY_COLOR_G  0.72f
-#define SKY_COLOR_B  0.90f
+#define SKY_COLOR_R 0.45f
+#define SKY_COLOR_G 0.72f
+#define SKY_COLOR_B 0.90f
 #define SKY_ZENITH_R 0.20f
 #define SKY_ZENITH_G 0.48f
 #define SKY_ZENITH_B 0.86f
 
 #define FOG_START 40.0f
-#define FOG_END   220.0f
+#define FOG_END 220.0f
 
 #define R_MAX_VERTS 16384
 #define R_MAX_DRAWS 512
 
 typedef struct {
-    float x, y, z;
-    float r, g, b, a;
-    float u, v;
+  float x, y, z;
+  float r, g, b, a;
+  float u, v;
 } RVertex;
 
-typedef enum { R_TRIANGLES, R_LINES, R_QUADS } RPrim;
-typedef enum { R_CULL_NONE, R_CULL_BACK } RCull;
+typedef enum { R_TRIANGLES,
+               R_LINES,
+               R_QUADS } RPrim;
+typedef enum { R_CULL_NONE,
+               R_CULL_BACK } RCull;
 
 /* Scene pass a draw belongs to, so per-part costs can be counted. */
 typedef enum {
-    R_PASS_OTHER,
-    R_PASS_SKY,
-    R_PASS_OCEAN,
-    R_PASS_TERRAIN,
-    R_PASS_PROPS,
-    R_PASS_VEHICLE,
-    R_PASS_PARTICLES,
-    R_PASS_HUD,
-    R_PASS_COUNT
+  R_PASS_OTHER,
+  R_PASS_SKY,
+  R_PASS_OCEAN,
+  R_PASS_TERRAIN,
+  R_PASS_PROPS,
+  R_PASS_VEHICLE,
+  R_PASS_PARTICLES,
+  R_PASS_HUD,
+  R_PASS_COUNT
 } RPass;
 
 /*
@@ -63,11 +66,11 @@ typedef enum {
  * backend's business, so no PVR/GE concepts leak into this header.
  */
 typedef enum {
-    R_COMPOSITE_OPAQUE,
-    R_COMPOSITE_CUTOUT,
-    R_COMPOSITE_TRANSLUCENT,
-    R_COMPOSITE_OVERLAY,
-    R_COMPOSITE_COUNT
+  R_COMPOSITE_OPAQUE,
+  R_COMPOSITE_CUTOUT,
+  R_COMPOSITE_TRANSLUCENT,
+  R_COMPOSITE_OVERLAY,
+  R_COMPOSITE_COUNT
 } RComposite;
 
 /* Defined in mesh.h. Forward-declared so RDraw can reference one. */
@@ -84,49 +87,49 @@ struct Mesh;
  * screen-space and OVERLAY. OVERLAY draws are always screen-space.
  */
 typedef struct {
-    RPrim prim;
-    int first;
-    int count;
+  RPrim prim;
+  int first;
+  int count;
 
-    const struct Mesh* mesh;
-    float world[16];
+  const struct Mesh* mesh;
+  float world[16];
 
-    RComposite composite; /* what the draw is; backends map this to a native list */
-    int screen_space;     /* 1 = normalised [0,1] ortho, 0 = world space */
-    int lit;
-    int fog;
-    int blend;
-    int depth_write;
-    RCull cull;
-    int textured;
-    float tint[4];
+  RComposite composite; /* what the draw is; backends map this to a native list */
+  int screen_space;     /* 1 = normalised [0,1] ortho, 0 = world space */
+  int lit;
+  int fog;
+  int blend;
+  int depth_write;
+  RCull cull;
+  int textured;
+  float tint[4];
 
-    RPass pass; /* filled in by r_draw from the current r_pass() */
+  RPass pass; /* filled in by r_draw from the current r_pass() */
 } RDraw;
 
 typedef struct {
-    int width;  /* framebuffer pixels; used to place 2D text */
-    int height;
+  int width; /* framebuffer pixels; used to place 2D text */
+  int height;
 
-    float clear[4];
-    float view[16]; /* column-major */
-    float proj[16]; /* column-major */
-    int fog_enabled;
-    float fog_color[4];
-    float fog_start;
-    float fog_end;
+  float clear[4];
+  float view[16]; /* column-major */
+  float proj[16]; /* column-major */
+  int fog_enabled;
+  float fog_color[4];
+  float fog_start;
+  float fog_end;
 
-    RVertex verts[R_MAX_VERTS];
-    int vert_count;
+  RVertex verts[R_MAX_VERTS];
+  int vert_count;
 
-    RDraw draws[R_MAX_DRAWS];
-    int draw_count;
+  RDraw draws[R_MAX_DRAWS];
+  int draw_count;
 
-    /* Submitted-vertex (index) and draw counts, total and per pass. */
-    int stat_verts;
-    int stat_draws;
-    int pass_verts[R_PASS_COUNT];
-    int pass_draws[R_PASS_COUNT];
+  /* Submitted-vertex (index) and draw counts, total and per pass. */
+  int stat_verts;
+  int stat_draws;
+  int pass_verts[R_PASS_COUNT];
+  int pass_draws[R_PASS_COUNT];
 } RenderFrame;
 
 /* Recording API. The game calls these each frame. */
@@ -137,8 +140,7 @@ void r_clear(float r, float g, float b, float a);
 void r_viewport(int width, int height);
 void r_camera(const float* view, const float* proj);
 void r_fog(int enabled, const float color[4], float start, float end);
-int  r_vertex(float x, float y, float z,
-              float r, float g, float b, float a, float u, float v);
+int r_vertex(float x, float y, float z, float r, float g, float b, float a, float u, float v);
 void r_draw(const RDraw* draw);
 
 /* Sets the pass subsequent draws are attributed to (for the stats counters). */

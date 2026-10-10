@@ -1,15 +1,14 @@
 #include "texture_gu.h"
 
-#include "boot_kind.h"
-
 #include <malloc.h> /* memalign (newlib) */
+#include <pspgu.h>
+#include <pspiofilemgr.h>
+#include <pspkernel.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include <pspgu.h>
-#include <pspiofilemgr.h>
-#include <pspkernel.h>
+#include "boot_kind.h"
 
 /*
  * PNG only keeps the vendored decoder small; all assets are 8-bit RGBA PNGs.
@@ -38,7 +37,7 @@
 #define MAX_TEXTURES 64
 
 typedef struct {
-  unsigned int *pixels;
+  unsigned int* pixels;
   int w, h, tbw;
   unsigned int psm;
 } GuTexture;
@@ -46,11 +45,13 @@ typedef struct {
 static GuTexture s_tex[MAX_TEXTURES];
 static int s_tex_count = 0;
 
-static int is_pow2(int v) { return v > 0 && (v & (v - 1)) == 0; }
+static int is_pow2(int v) {
+  return v > 0 && (v & (v - 1)) == 0;
+}
 
-static int try_load(const char *path, int *w, int *h, unsigned char **out) {
+static int try_load(const char* path, int* w, int* h, unsigned char** out) {
   int comp = 0;
-  unsigned char *data = stbi_load(path, w, h, &comp, 4);
+  unsigned char* data = stbi_load(path, w, h, &comp, 4);
   if (!data)
     return 0;
   *out = data;
@@ -62,13 +63,13 @@ static int try_load(const char *path, int *w, int *h, unsigned char **out) {
  * firmware relative-path handling is unreliable there (and stdio/fopen is
  * just sceIoOpen underneath anyway), so skip the expansion entirely.
  */
-static unsigned char *load_disc(const char *path, int *w, int *h) {
+static unsigned char* load_disc(const char* path, int* w, int* h) {
   SceIoStat st;
   memset(&st, 0, sizeof(st));
   if (sceIoGetstat(path, &st) < 0 || st.st_size <= 0)
     return NULL;
   size_t size = (size_t)st.st_size;
-  unsigned char *raw = (unsigned char *)malloc(size);
+  unsigned char* raw = (unsigned char*)malloc(size);
   if (!raw)
     return NULL;
   SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
@@ -89,17 +90,17 @@ static unsigned char *load_disc(const char *path, int *w, int *h) {
     return NULL;
   }
   int comp = 0;
-  unsigned char *data = stbi_load_from_memory(raw, (int)size, w, h, &comp, 4);
+  unsigned char* data = stbi_load_from_memory(raw, (int)size, w, h, &comp, 4);
   free(raw);
   return data;
 }
 
-static TextureId load_texture(const char *name) {
+static TextureId load_texture(const char* name) {
   char path[512];
   int w = 0, h = 0;
-  unsigned char *data = NULL;
+  unsigned char* data = NULL;
 
-  const char *env = getenv("ASSET_DIR");
+  const char* env = getenv("ASSET_DIR");
   if (env && *env) {
     snprintf(path, sizeof(path), "%s/%s", env, name);
     try_load(path, &w, &h, &data);
@@ -111,7 +112,7 @@ static TextureId load_texture(const char *name) {
   if (!data) {
     /* Non-disc boots: cwd already points at the game (host0 dev tree, PBP
      * dir), so the relative root is the primary mechanism. */
-    static const char *roots[] = {
+    static const char* roots[] = {
         "host0:/assets",
         "ms0:/PSP/GAME/island/assets",
         "assets",
@@ -133,7 +134,7 @@ static TextureId load_texture(const char *name) {
   }
 
   int count = w * h;
-  unsigned int *pixels = (unsigned int *)memalign(16, (size_t)count * 4);
+  unsigned int* pixels = (unsigned int*)memalign(16, (size_t)count * 4);
   if (!pixels) {
     stbi_image_free(data);
     return 0;
@@ -171,7 +172,7 @@ void texture_gu_apply(TextureId id) {
   if (idx < 0 || idx >= s_tex_count)
     return;
 
-  GuTexture *t = &s_tex[idx];
+  GuTexture* t = &s_tex[idx];
   sceGuTexMode(t->psm, 0, 0, 0);
   sceGuTexImage(0, t->w, t->h, t->tbw, t->pixels);
   sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
@@ -180,7 +181,9 @@ void texture_gu_apply(TextureId id) {
   sceGuTexFlush();
 }
 
-void texture_gu_init(void) { texture_set_loader(load_texture); }
+void texture_gu_init(void) {
+  texture_set_loader(load_texture);
+}
 
 void texture_gu_shutdown(void) {
   for (int i = 0; i < s_tex_count; i++)

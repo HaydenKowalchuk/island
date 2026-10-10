@@ -1,9 +1,8 @@
 #include "menu.h"
 
+#include <cglm/cglm.h>
 #include <math.h>
 #include <string.h>
-
-#include <cglm/cglm.h>
 
 #include "chase_cam.h"
 #include "input.h"
@@ -50,190 +49,186 @@ static mat4 s_view;
 static mat4 s_proj;
 
 void menu_init(void) {
-    s_screen = MENU_SCREEN_INTRO;
-    s_card = 0;
-    s_card_timer = 0.0f;
-    s_menu_time = 0.0f;
+  // s_screen = MENU_SCREEN_INTRO;
+  s_screen = MENU_SCREEN_PLAY;
+  s_card = 0;
+  s_card_timer = 0.0f;
+  s_menu_time = 0.0f;
 }
 
 MenuScreen menu_screen(void) {
-    return s_screen;
+  return s_screen;
 }
 
 int menu_intro_card(void) {
-    return s_card;
+  return s_card;
 }
 
 void menu_set_screen(MenuScreen screen) {
-    s_screen = screen;
-    s_card = 0;
-    s_card_timer = 0.0f;
+  s_screen = screen;
+  s_card = 0;
+  s_card_timer = 0.0f;
 }
 
-void menu_set_backdrop(float anchor_x, float anchor_z, float look_x,
-                       float look_z) {
-    s_anchor[0] = anchor_x;
-    s_anchor[1] = anchor_z;
-    s_look[0] = look_x;
-    s_look[1] = look_z;
+void menu_set_backdrop(float anchor_x, float anchor_z, float look_x, float look_z) {
+  s_anchor[0] = anchor_x;
+  s_anchor[1] = anchor_z;
+  s_look[0] = look_x;
+  s_look[1] = look_z;
 }
 
 /* True on the tick that began this frame when any gameplay/menu action was
  * pressed. Dev actions (cam/debug/reset) do not skip the front-end. */
 static int any_pressed(void) {
-    const InputState *in = input_state();
-    for (int i = 0; i < ACT_DEV_CAM; i++) {
-        if (in->pressed[i])
-            return 1;
-    }
-    return 0;
+  const InputState* in = input_state();
+  for (int i = 0; i < ACT_DEV_CAM; i++) {
+    if (in->pressed[i])
+      return 1;
+  }
+  return 0;
 }
 
 /* Advance to the next intro card, or leave the intro when the last is done. */
 static void intro_next(void) {
-    s_card_timer = 0.0f;
-    if (++s_card >= INTRO_CARDS)
-        s_screen = MENU_SCREEN_MAIN;
+  s_card_timer = 0.0f;
+  if (++s_card >= INTRO_CARDS)
+    s_screen = MENU_SCREEN_MAIN;
 }
 
 void menu_tick(float dt) {
-    s_menu_time += dt;
+  s_menu_time += dt;
 
-    switch (s_screen) {
+  switch (s_screen) {
     case MENU_SCREEN_INTRO:
-        s_card_timer += dt;
-        if (s_card_timer >= CARD_TIME)
-            intro_next();
-        else if (any_pressed())
-            intro_next(); /* one card per press; edges only, never held */
-        break;
+      s_card_timer += dt;
+      if (s_card_timer >= CARD_TIME)
+        intro_next();
+      else if (any_pressed())
+        intro_next(); /* one card per press; edges only, never held */
+      break;
     case MENU_SCREEN_MAIN:
-        /* Confirm or the throttle starts play — the attract hint invites the
-         * throttle. Item selection/nav arrive with island1-lb8c. */
-        if (input_pressed(ACT_MENU_CONFIRM) || input_pressed(ACT_THROTTLE))
-            s_screen = MENU_SCREEN_PLAY;
-        break;
+      /* Confirm or the throttle starts play — the attract hint invites the
+       * throttle. Item selection/nav arrive with island1-lb8c. */
+      if (input_pressed(ACT_MENU_CONFIRM) || input_pressed(ACT_THROTTLE))
+        s_screen = MENU_SCREEN_PLAY;
+      break;
     case MENU_SCREEN_CONTROLS:
     case MENU_SCREEN_CREDITS:
-        if (input_pressed(ACT_MENU_BACK))
-            s_screen = MENU_SCREEN_MAIN;
-        break;
+      if (input_pressed(ACT_MENU_BACK))
+        s_screen = MENU_SCREEN_MAIN;
+      break;
     case MENU_SCREEN_PLAY:
-        /* No back-exit in v1: ESC still quits through the backend. */
-        break;
+      /* No back-exit in v1: ESC still quits through the backend. */
+      break;
     default:
-        break;
-    }
+      break;
+  }
 }
 
 /* Eased fade: smoothstep in during the fade-in, hold, out during fade-out. */
 static float card_alpha(float progress) {
-    float t_in = CARD_FADE_IN / CARD_TIME;
-    float t_out = (CARD_FADE_IN + CARD_HOLD) / CARD_TIME;
-    if (progress < t_in) {
-        float x = progress / t_in;
-        return x * x * (3.0f - 2.0f * x);
-    }
-    if (progress < t_out)
-        return 1.0f;
-    float x = (progress - t_out) / (1.0f - t_out);
-    return 1.0f - x * x * (3.0f - 2.0f * x);
+  float t_in = CARD_FADE_IN / CARD_TIME;
+  float t_out = (CARD_FADE_IN + CARD_HOLD) / CARD_TIME;
+  if (progress < t_in) {
+    float x = progress / t_in;
+    return x * x * (3.0f - 2.0f * x);
+  }
+  if (progress < t_out)
+    return 1.0f;
+  float x = (progress - t_out) / (1.0f - t_out);
+  return 1.0f - x * x * (3.0f - 2.0f * x);
 }
 
-static void render_card(const char *title, const char *sub, float scale,
-                        float sub_scale, float progress) {
-    const RenderFrame *fr = r_frame();
-    int w = fr->width;
-    int h = fr->height;
+static void render_card(const char* title, const char* sub, float scale, float sub_scale, float progress) {
+  const RenderFrame* fr = r_frame();
+  int w = fr->width;
+  int h = fr->height;
 
-    float a = card_alpha(progress);
+  float a = card_alpha(progress);
 
-    /* Fade veil over the whole screen. Over the black boot clear it is
-     * invisible and the text carries the fade; if the scene is ever recorded
-     * behind the card, the veil crossfades it in and out. */
-    const float veil[4] = {0.0f, 0.0f, 0.0f, 1.0f - a};
-    r_rect_2d(0.0f, 0.0f, 1.0f, 1.0f, veil);
+  /* Fade veil over the whole screen. Over the black boot clear it is
+   * invisible and the text carries the fade; if the scene is ever recorded
+   * behind the card, the veil crossfades it in and out. */
+  const float veil[4] = {0.0f, 0.0f, 0.0f, 1.0f - a};
+  r_rect_2d(0.0f, 0.0f, 1.0f, 1.0f, veil);
 
-    /* Text follows the fade; a lone title is vertically centred. */
-    const float col[4] = {1.0f, 1.0f, 1.0f, a};
-    int tw = (int)(8.0f * scale * (float)strlen(title));
-    if (sub) {
-        r_text_2d((w - tw) / 2, h / 2 - 48, scale, title, col);
-        int sw = (int)(8.0f * sub_scale * (float)strlen(sub));
-        r_text_2d((w - sw) / 2, h / 2 + 24, sub_scale, sub, col);
-    } else {
-        r_text_2d((w - tw) / 2, h / 2 - (int)(4.0f * scale), scale, title, col);
-    }
+  /* Text follows the fade; a lone title is vertically centred. */
+  const float col[4] = {1.0f, 1.0f, 1.0f, a};
+  int tw = (int)(8.0f * scale * (float)strlen(title));
+  if (sub) {
+    r_text_2d((w - tw) / 2, h / 2 - 48, scale, title, col);
+    int sw = (int)(8.0f * sub_scale * (float)strlen(sub));
+    r_text_2d((w - sw) / 2, h / 2 + 24, sub_scale, sub, col);
+  } else {
+    r_text_2d((w - tw) / 2, h / 2 - (int)(4.0f * scale), scale, title, col);
+  }
 }
 
 void menu_render(void) {
-    r_pass(R_PASS_HUD);
+  r_pass(R_PASS_HUD);
 
-    if (s_screen == MENU_SCREEN_INTRO) {
-        static const struct {
-            const char *title;
-            const char *sub;
-            float scale;
-            float sub_scale;
-        } cards[INTRO_CARDS] = {
-            {"AN AI GAMES PRODUCTION", NULL, 1.5f, 0.0f},
-            {"ISLAND", "A PACKAGE DELIVERY GAME", 6.0f, 1.5f},
-        };
-        if (s_card < 0 || s_card >= INTRO_CARDS)
-            return;
-        render_card(cards[s_card].title, cards[s_card].sub, cards[s_card].scale,
-                    cards[s_card].sub_scale, s_card_timer / CARD_TIME);
-        return;
-    }
+  if (s_screen == MENU_SCREEN_INTRO) {
+    static const struct {
+      const char* title;
+      const char* sub;
+      float scale;
+      float sub_scale;
+    } cards[INTRO_CARDS] = {
+        {"AN AI GAMES PRODUCTION", NULL, 1.5f, 0.0f},
+        {"ISLAND", "A PACKAGE DELIVERY GAME", 6.0f, 1.5f},
+    };
+    if (s_card < 0 || s_card >= INTRO_CARDS)
+      return;
+    render_card(cards[s_card].title, cards[s_card].sub, cards[s_card].scale, cards[s_card].sub_scale, s_card_timer / CARD_TIME);
+    return;
+  }
 
-    /* Attract hint (island1-7u5i): pulsing invite above the bottom edge;
-     * the proper menu items arrive with island1-lb8c. */
-    if (s_screen == MENU_SCREEN_MAIN) {
-        const RenderFrame *fr = r_frame();
-        float a = 0.55f + 0.25f * sinf(s_menu_time * 2.5f);
-        const float dim[4] = {1.0f, 1.0f, 1.0f, a};
-        static const char hint[] = "PRESS THROTTLE TO START";
-        int hw = (int)(8.0f * 1.5f * (float)(sizeof(hint) - 1));
-        r_text_2d((fr->width - hw) / 2, fr->height - 56, 1.5f, hint, dim);
-        return;
-    }
+  /* Attract hint (island1-7u5i): pulsing invite above the bottom edge;
+   * the proper menu items arrive with island1-lb8c. */
+  if (s_screen == MENU_SCREEN_MAIN) {
+    const RenderFrame* fr = r_frame();
+    float a = 0.55f + 0.25f * sinf(s_menu_time * 2.5f);
+    const float dim[4] = {1.0f, 1.0f, 1.0f, a};
+    static const char hint[] = "PRESS THROTTLE TO START";
+    int hw = (int)(8.0f * 1.5f * (float)(sizeof(hint) - 1));
+    r_text_2d((fr->width - hw) / 2, fr->height - 56, 1.5f, hint, dim);
+    return;
+  }
 }
 
 void menu_cam_update(int width, int height) {
-    float ang = s_menu_time * MENU_ORBIT_RATE;
-    s_eye[0] = s_anchor[0] + sinf(ang) * MENU_ORBIT_R;
-    s_eye[1] = MENU_EYE_H + sinf(s_menu_time * 0.5f) * MENU_EYE_BOB;
-    s_eye[2] = s_anchor[1] + cosf(ang) * MENU_ORBIT_R;
+  float ang = s_menu_time * MENU_ORBIT_RATE;
+  s_eye[0] = s_anchor[0] + sinf(ang) * MENU_ORBIT_R;
+  s_eye[1] = MENU_EYE_H + sinf(s_menu_time * 0.5f) * MENU_EYE_BOB;
+  s_eye[2] = s_anchor[1] + cosf(ang) * MENU_ORBIT_R;
 
-    float look[3] = {s_look[0], MENU_LOOK_H, s_look[1]};
-    glm_lookat(s_eye, look, (vec3){0.0f, 1.0f, 0.0f}, s_view);
+  float look[3] = {s_look[0], MENU_LOOK_H, s_look[1]};
+  glm_lookat(s_eye, look, (vec3){0.0f, 1.0f, 0.0f}, s_view);
 
-    float aspect = (height > 0) ? (float)width / (float)height
-                                : (16.0f / 9.0f);
-    glm_perspective(chase_vfov_for_aspect(MENU_FOV, aspect), aspect,
-                    MENU_ZNEAR, MENU_ZFAR, s_proj);
+  float aspect = (height > 0) ? (float)width / (float)height : (16.0f / 9.0f);
+  glm_perspective(chase_vfov_for_aspect(MENU_FOV, aspect), aspect, MENU_ZNEAR, MENU_ZFAR, s_proj);
 }
 
-const float *menu_cam_view(void) {
-    return (const float *)s_view;
+const float* menu_cam_view(void) {
+  return (const float*)s_view;
 }
 
-const float *menu_cam_proj(void) {
-    return (const float *)s_proj;
+const float* menu_cam_proj(void) {
+  return (const float*)s_proj;
 }
 
 void menu_cam_eye(float out[3]) {
-    out[0] = s_eye[0];
-    out[1] = s_eye[1];
-    out[2] = s_eye[2];
+  out[0] = s_eye[0];
+  out[1] = s_eye[1];
+  out[2] = s_eye[2];
 }
 
-void menu_cam_pose(float pos[3], float look[3], float *fov) {
-    pos[0] = s_eye[0];
-    pos[1] = s_eye[1];
-    pos[2] = s_eye[2];
-    look[0] = s_look[0];
-    look[1] = MENU_LOOK_H;
-    look[2] = s_look[1];
-    *fov = MENU_FOV;
+void menu_cam_pose(float pos[3], float look[3], float* fov) {
+  pos[0] = s_eye[0];
+  pos[1] = s_eye[1];
+  pos[2] = s_eye[2];
+  look[0] = s_look[0];
+  look[1] = MENU_LOOK_H;
+  look[2] = s_look[1];
+  *fov = MENU_FOV;
 }

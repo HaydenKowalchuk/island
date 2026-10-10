@@ -38,8 +38,7 @@
  * `type_progress` is how many characters (float, truncated) of it are
  * visible, so callers drive the reveal speed.
  */
-void hud_dialog_draw(const char* name, const char* line, float type_progress,
-                     int page);
+void hud_dialog_draw(const char* name, const char* line, float type_progress, int page);
 
 /*
  * Begin a conversation. `lines` must point at storage that outlives the

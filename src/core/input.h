@@ -11,46 +11,46 @@
  */
 
 typedef enum {
-    ACT_THROTTLE,
-    ACT_BRAKE,
-    ACT_BOOST,
-    ACT_INTERACT, /* context: pickup / deliver / talk */
-    ACT_VEHICLE,  /* enter / exit vehicle */
-    ACT_LOOK,     /* held while looking (mouse drag; always-on on consoles) */
-    ACT_PAUSE,
-    ACT_INVENTORY, /* toggle the inventory overlay */
-    ACT_QUIT,
-    /* front-end flow (island1-tpz8): menu navigation */
-    ACT_MENU_UP,
-    ACT_MENU_DOWN,
-    ACT_MENU_CONFIRM,
-    ACT_MENU_BACK,
-    /* dev-only actions, outside the gameplay contract */
-    ACT_DEV_CAM,
-    ACT_DEV_DEBUG,
-    ACT_DEV_RESET,
-    ACT_COUNT
+  ACT_THROTTLE,
+  ACT_BRAKE,
+  ACT_BOOST,
+  ACT_INTERACT, /* context: pickup / deliver / talk */
+  ACT_VEHICLE,  /* enter / exit vehicle */
+  ACT_LOOK,     /* held while looking (mouse drag; always-on on consoles) */
+  ACT_PAUSE,
+  ACT_INVENTORY, /* toggle the inventory overlay */
+  ACT_QUIT,
+  /* front-end flow (island1-tpz8): menu navigation */
+  ACT_MENU_UP,
+  ACT_MENU_DOWN,
+  ACT_MENU_CONFIRM,
+  ACT_MENU_BACK,
+  /* dev-only actions, outside the gameplay contract */
+  ACT_DEV_CAM,
+  ACT_DEV_DEBUG,
+  ACT_DEV_RESET,
+  ACT_COUNT
 } Action;
 
 typedef enum {
-    AX_STEER,    /* -1 left .. +1 right (absolute, held) */
-    AX_THROTTLE, /*  0..1 accelerate / walk forward (absolute, held) */
-    AX_BRAKE,    /*  0..1 brake / reverse (absolute, held) */
-    AX_LOOK_X,   /* radians accumulated this tick */
-    AX_LOOK_Y,
-    AXIS_COUNT
+  AX_STEER,    /* -1 left .. +1 right (absolute, held) */
+  AX_THROTTLE, /*  0..1 accelerate / walk forward (absolute, held) */
+  AX_BRAKE,    /*  0..1 brake / reverse (absolute, held) */
+  AX_LOOK_X,   /* radians accumulated this tick */
+  AX_LOOK_Y,
+  AXIS_COUNT
 } AxisId;
 
 typedef struct {
-    uint8_t held[ACT_COUNT];
-    uint8_t pressed[ACT_COUNT];  /* rising edge on the tick that began this frame */
-    uint8_t released[ACT_COUNT]; /* falling edge */
-    float axis[AXIS_COUNT];
+  uint8_t held[ACT_COUNT];
+  uint8_t pressed[ACT_COUNT];  /* rising edge on the tick that began this frame */
+  uint8_t released[ACT_COUNT]; /* falling edge */
+  float axis[AXIS_COUNT];
 } InputState;
 
 /* Core side. */
-void input_init(void);          /* reset state; call once at startup */
-void input_begin_frame(void);   /* once per logic tick: latch pending, compute edges */
+void input_init(void);        /* reset state; call once at startup */
+void input_begin_frame(void); /* once per logic tick: latch pending, compute edges */
 const InputState* input_state(void);
 bool input_held(Action a);
 bool input_pressed(Action a);

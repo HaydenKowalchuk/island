@@ -65,18 +65,22 @@ static int rng_below(int n) {
   return (int)((s_rng >> 8) % (unsigned)n);
 }
 
-static const QuestChain *chain(void) { return &s_chains[s_chain]; }
+static const QuestChain* chain(void) {
+  return &s_chains[s_chain];
+}
 
-static QuestStepType cur_type(void) { return (QuestStepType)chain()->steps[s_step].type; }
+static QuestStepType cur_type(void) {
+  return (QuestStepType)chain()->steps[s_step].type;
+}
 
 /* Resolve dynamic targets for this chain (called at chain start). */
 static void resolve_targets(void) {
-  const QuestChain *c = chain();
+  const QuestChain* c = chain();
   int dyn[QUEST_MAX_STEPS];
   int ndyn = 0;
   s_chain_house = -1;
   for (int i = 0; i < c->step_count; i++) {
-    const QuestStep *st = &c->steps[i];
+    const QuestStep* st = &c->steps[i];
     if (st->target >= 0) {
       s_res[i] = st->target;
     } else if (st->type == QSTEP_DELIVER) {
@@ -104,14 +108,13 @@ static void resolve_targets(void) {
 }
 
 static void set_gift_toast(uint16_t item) {
-  const ItemDef *d = item_def(item);
-  snprintf(s_toast, sizeof(s_toast), "GIFT: %s",
-           (d && d->name) ? d->name : "?");
+  const ItemDef* d = item_def(item);
+  snprintf(s_toast, sizeof(s_toast), "GIFT: %s", (d && d->name) ? d->name : "?");
   s_toast_pending = 1;
 }
 
 static void advance(void) {
-  const QuestChain *c = chain();
+  const QuestChain* c = chain();
   if (s_step + 1 >= c->step_count) {
     /* Chain complete: reward, then the breather. */
     if (c->reward_item && c->reward_count) {
@@ -138,7 +141,7 @@ static void start_next_chain(void) {
 }
 
 static void do_grant(void) {
-  const QuestStep *st = &chain()->steps[s_step];
+  const QuestStep* st = &chain()->steps[s_step];
   uint16_t n = st->count ? st->count : 1;
   if (st->item) {
     inv_add(st->item, n);
@@ -218,29 +221,51 @@ void quest_notify_claim(void) {
 
 /* ---- read side ---------------------------------------------------------- */
 
-QuestStepType quest_step_type(void) { return cur_type(); }
+QuestStepType quest_step_type(void) {
+  return cur_type();
+}
 
-int quest_step_target(void) { return s_res[s_step]; }
+int quest_step_target(void) {
+  return s_res[s_step];
+}
 
-uint16_t quest_step_item(void) { return chain()->steps[s_step].item; }
+uint16_t quest_step_item(void) {
+  return chain()->steps[s_step].item;
+}
 
-uint16_t quest_step_count(void) { return chain()->steps[s_step].count; }
+uint16_t quest_step_count(void) {
+  return chain()->steps[s_step].count;
+}
 
-const char *quest_step_prompt(void) { return chain()->steps[s_step].prompt; }
+const char* quest_step_prompt(void) {
+  return chain()->steps[s_step].prompt;
+}
 
-int quest_chain_house(void) { return s_chain_house; }
+int quest_chain_house(void) {
+  return s_chain_house;
+}
 
-const char *quest_chain_name(void) { return chain()->name; }
+const char* quest_chain_name(void) {
+  return chain()->name;
+}
 
-int quest_step_seq(void) { return s_step_seq; }
+int quest_step_seq(void) {
+  return s_step_seq;
+}
 
-int quest_carried(void) { return s_carried; }
+int quest_carried(void) {
+  return s_carried;
+}
 
-int quest_delivered(void) { return s_delivered; }
+int quest_delivered(void) {
+  return s_delivered;
+}
 
-int quest_paused(void) { return s_pause > 0.0f; }
+int quest_paused(void) {
+  return s_pause > 0.0f;
+}
 
-const char *quest_take_toast(void) {
+const char* quest_take_toast(void) {
   if (!s_toast_pending)
     return NULL;
   s_toast_pending = 0;

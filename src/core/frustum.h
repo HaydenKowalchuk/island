@@ -14,7 +14,7 @@
 
 /* Plane in world/clip-consistent space: a*x + b*y + c*z + d, unit normal. */
 typedef struct {
-    float a, b, c, d;
+  float a, b, c, d;
 } Plane;
 
 /*
@@ -22,15 +22,13 @@ typedef struct {
  * cglm matrices are column-major, so matrix row r is (m[r], m[4+r], ...).
  * Order: 0 left, 1 right, 2 bottom, 3 top, 4 near, 5 far.
  */
-void frustum_extract(const float *clip, Plane planes[6]);
+void frustum_extract(const float* clip, Plane planes[6]);
 
 /* Conservative AABB test: reject only when the box is fully outside a plane. */
-int frustum_aabb_visible(const Plane planes[6], float x0, float y0, float z0,
-                         float x1, float y1, float z1);
+int frustum_aabb_visible(const Plane planes[6], float x0, float y0, float z0, float x1, float y1, float z1);
 
 /* Conservative sphere test (used by prop LOD); `radius` must be >= 0. */
-int frustum_sphere_visible(const Plane planes[6], float x, float y, float z,
-                           float radius);
+int frustum_sphere_visible(const Plane planes[6], float x, float y, float z, float radius);
 
 /*
  * Tighter test for a flat quad: its four corners in world space,
@@ -38,7 +36,6 @@ int frustum_sphere_visible(const Plane planes[6], float x, float y, float z,
  * own AABB, so this rejects rim cells the box test must keep, and it still
  * keeps anything whose corner is inside any plane.
  */
-int frustum_quad_visible(const Plane planes[6], float x0, float z0, float x1,
-                         float z1, float y00, float y01, float y11, float y10);
+int frustum_quad_visible(const Plane planes[6], float x0, float z0, float x1, float z1, float y00, float y01, float y11, float y10);
 
 #endif

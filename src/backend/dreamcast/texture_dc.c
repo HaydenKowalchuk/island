@@ -1,9 +1,8 @@
 #include "texture_dc.h"
 
+#include <dc/pvr.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-#include <dc/pvr.h>
 
 /*
  * PNG only keeps the vendored decoder small; all assets are 8-bit RGBA PNGs.
@@ -40,20 +39,19 @@
 static DcTexture s_tex[MAX_TEXTURES];
 static int s_tex_count = 0;
 
-static const char *asset_root(void) {
-  const char *dir = getenv("ASSET_DIR");
+static const char* asset_root(void) {
+  const char* dir = getenv("ASSET_DIR");
   return (dir && *dir) ? dir : "/cd/assets";
 }
 
-static TextureId load_texture(const char *name) {
+static TextureId load_texture(const char* name) {
   char path[512];
   snprintf(path, sizeof(path), "%s/%s", asset_root(), name);
 
   int w = 0, h = 0, comp = 0;
-  unsigned char *data = stbi_load(path, &w, &h, &comp, 4);
+  unsigned char* data = stbi_load(path, &w, &h, &comp, 4);
   if (!data) {
-    fprintf(stderr, "texture: cannot load %s (%s)\n", path,
-            stbi_failure_reason());
+    fprintf(stderr, "texture: cannot load %s (%s)\n", path, stbi_failure_reason());
     return 0;
   }
 
@@ -70,7 +68,7 @@ static TextureId load_texture(const char *name) {
     }
   }
 
-  unsigned short *pixels = (unsigned short *)malloc((size_t)w * (size_t)h * 2);
+  unsigned short* pixels = (unsigned short*)malloc((size_t)w * (size_t)h * 2);
   if (!pixels) {
     stbi_image_free(data);
     return 0;
@@ -99,8 +97,7 @@ static TextureId load_texture(const char *name) {
   }
 
   /* pvr_txr_load_ex twiddles the linear buffer and uploads it. */
-  pvr_txr_load_ex(pixels, vram, (unsigned int)w, (unsigned int)h,
-                  PVR_TXRLOAD_16BPP);
+  pvr_txr_load_ex(pixels, vram, (unsigned int)w, (unsigned int)h, PVR_TXRLOAD_16BPP);
 
   free(pixels);
   stbi_image_free(data);
@@ -110,7 +107,7 @@ static TextureId load_texture(const char *name) {
     return 0;
   }
 
-  DcTexture *e = &s_tex[s_tex_count++];
+  DcTexture* e = &s_tex[s_tex_count++];
   e->vram = vram;
   e->w = w;
   e->h = h;
@@ -121,7 +118,9 @@ static TextureId load_texture(const char *name) {
   return (TextureId)s_tex_count;
 }
 
-void texture_dc_init(void) { texture_set_loader(load_texture); }
+void texture_dc_init(void) {
+  texture_set_loader(load_texture);
+}
 
 void texture_dc_shutdown(void) {
   for (int i = 0; i < s_tex_count; i++)
@@ -129,7 +128,7 @@ void texture_dc_shutdown(void) {
   s_tex_count = 0;
 }
 
-const DcTexture *texture_dc_lookup(int id) {
+const DcTexture* texture_dc_lookup(int id) {
   if (id <= 0 || id > s_tex_count)
     return NULL;
   return &s_tex[id - 1];

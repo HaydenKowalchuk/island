@@ -2,6 +2,8 @@
  * (island1-7u5i): boot into the intro, gameplay gated until PLAY, skip and
  * confirm transitions, and the menu camera drift. Intro card timings are
  * hand-tuned and deliberately not pinned here. */
+#include "menu.h"
+
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -9,13 +11,12 @@
 #include "chase_cam.h"
 #include "game.h"
 #include "input.h"
-#include "menu.h"
 #include "render.h"
 #include "terrain.h"
 
 static float dist3(const float* a, const float* b) {
-    float dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
-    return sqrtf(dx * dx + dy * dy + dz * dz);
+  float dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+  return sqrtf(dx * dx + dy * dy + dz * dz);
 }
 
 int main(void) {
@@ -39,7 +40,7 @@ int main(void) {
 
   /* Gameplay is gated while the menu is up: a held driving input moves
    * nothing. The throttle would start play, so use the brake. */
-  const float *parked = game_vehicle_pos();
+  const float* parked = game_vehicle_pos();
   input_event_key(ACT_BRAKE, true);
   for (int i = 0; i < 30; i++) {
     input_begin_frame();
@@ -48,7 +49,7 @@ int main(void) {
   input_event_key(ACT_BRAKE, false);
   input_begin_frame();
   game_tick(1.0f / 60.0f);
-  const float *after = game_vehicle_pos();
+  const float* after = game_vehicle_pos();
   assert(after[0] == parked[0] && after[2] == parked[2]);
 
   /* Camera handover (island1-38h3): run the attract backdrop like the real
@@ -60,11 +61,11 @@ int main(void) {
   }
   game_render(1.0f / 60.0f);
   float e1[3], carp[3];
-  const float *ep = game_cam_pos();
+  const float* ep = game_cam_pos();
   e1[0] = ep[0];
   e1[1] = ep[1];
   e1[2] = ep[2];
-  const float *cp = game_vehicle_pos();
+  const float* cp = game_vehicle_pos();
   carp[0] = cp[0];
   carp[1] = cp[1];
   carp[2] = cp[2];
@@ -77,7 +78,7 @@ int main(void) {
   game_tick(1.0f / 60.0f);
   game_render(1.0f / 60.0f);
   float c1[3];
-  const float *c1p = game_cam_pos();
+  const float* c1p = game_cam_pos();
   c1[0] = c1p[0];
   c1[1] = c1p[1];
   c1[2] = c1p[2];
@@ -90,7 +91,7 @@ int main(void) {
     game_render(1.0f / 60.0f);
   }
   float c2[3];
-  const float *c2p = game_cam_pos();
+  const float* c2p = game_cam_pos();
   c2[0] = c2p[0];
   c2[1] = c2p[1];
   c2[2] = c2p[2];
@@ -133,12 +134,11 @@ int main(void) {
   input_event_key(ACT_THROTTLE, false);
   input_begin_frame();
   game_tick(1.0f / 60.0f);
-  const float *drove = game_vehicle_pos();
+  const float* drove = game_vehicle_pos();
   assert(drove[0] != ox || drove[2] != oz);
 
   /* The four menu-nav actions produce clean pressed edges. */
-  const Action nav[4] = {ACT_MENU_UP, ACT_MENU_DOWN, ACT_MENU_CONFIRM,
-                         ACT_MENU_BACK};
+  const Action nav[4] = {ACT_MENU_UP, ACT_MENU_DOWN, ACT_MENU_CONFIRM, ACT_MENU_BACK};
   for (int i = 0; i < 4; i++) {
     input_event_key(nav[i], true);
     input_begin_frame();
@@ -160,7 +160,7 @@ int main(void) {
     menu_cam_update(1280, 720);
     float eye[3];
     menu_cam_eye(eye);
-    assert(eye[1] > 0.0f); /* above sea level for the whole orbit */
+    assert(eye[1] > 0.0f);                             /* above sea level for the whole orbit */
     assert(terrain_height_at(eye[0], eye[2]) <= 0.0f); /* over water */
     float dx = eye[0] - prev[0];
     float dy = eye[1] - prev[1];

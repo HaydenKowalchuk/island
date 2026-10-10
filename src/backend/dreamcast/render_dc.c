@@ -94,7 +94,9 @@ void render_init(void) {
   texture_dc_init();
 }
 
-void render_shutdown(void) { texture_dc_shutdown(); }
+void render_shutdown(void) {
+  texture_dc_shutdown();
+}
 
 /*
  * GL linear fog, per vertex: f = (end - dist) / (end - start), colour =
@@ -112,7 +114,7 @@ static float dc_fog_factor(float dist) {
 }
 
 /* out = a * b, column-major. */
-static void mat_mul(const float *a, const float *b, float *out) {
+static void mat_mul(const float* a, const float* b, float* out) {
   for (int c = 0; c < 4; c++) {
     for (int r = 0; r < 4; r++) {
       float s = 0.0f;
@@ -134,7 +136,7 @@ typedef struct {
   float r, g, b, a, u, v;
 } ClipFull;
 
-static void clip_full_world(const float *m, const RVertex *v, ClipFull *out) {
+static void clip_full_world(const float* m, const RVertex* v, ClipFull* out) {
   float x = v->x, y = v->y, z = v->z;
   out->pos.x = m[0] * x + m[4] * y + m[8] * z + m[12];
   out->pos.y = m[1] * x + m[5] * y + m[9] * z + m[13];
@@ -149,7 +151,7 @@ static void clip_full_world(const float *m, const RVertex *v, ClipFull *out) {
 }
 
 /* Screen-space draws enter clip space with w = 1 (no clip needed). */
-static void clip_full_unit(const RVertex *v, ClipFull *out) {
+static void clip_full_unit(const RVertex* v, ClipFull* out) {
   out->pos.x = v->x;
   out->pos.y = v->y;
   out->pos.z = 0.0f;
@@ -162,8 +164,7 @@ static void clip_full_unit(const RVertex *v, ClipFull *out) {
   out->v = v->v;
 }
 
-static void clip_full_lerp(const ClipFull *p, const ClipFull *q, float t,
-                           ClipFull *out) {
+static void clip_full_lerp(const ClipFull* p, const ClipFull* q, float t, ClipFull* out) {
   out->pos.x = p->pos.x + (q->pos.x - p->pos.x) * t;
   out->pos.y = p->pos.y + (q->pos.y - p->pos.y) * t;
   out->pos.z = p->pos.z + (q->pos.z - p->pos.z) * t;
@@ -183,13 +184,13 @@ static void clip_full_lerp(const ClipFull *p, const ClipFull *q, float t,
  */
 #define DC_CLIP_MAX 5
 
-static int dc_clip_near(ClipFull *poly, int n) {
+static int dc_clip_near(ClipFull* poly, int n) {
   ClipFull tmp[DC_CLIP_MAX];
   int m = 0;
 
   for (int i = 0; i < n; i++) {
-    const ClipFull *cur = &poly[i];
-    const ClipFull *nxt = &poly[(i + 1) % n];
+    const ClipFull* cur = &poly[i];
+    const ClipFull* nxt = &poly[(i + 1) % n];
     float dc = cur->pos.w - DC_CLIP_EPS;
     float dn = nxt->pos.w - DC_CLIP_EPS;
 
@@ -211,8 +212,7 @@ static int dc_clip_near(ClipFull *poly, int n) {
  * Project to PVR screen space and pack. z = znear/w — the PVR W-buffer
  * inverse depth in (0,1]; bigger is closer (PVR_DEPTHCMP_GREATER).
  */
-static void dc_pack_vert(const ClipFull *v, int fog, const float tint[4],
-                         pvr_vertex_t *out, unsigned int flags) {
+static void dc_pack_vert(const ClipFull* v, int fog, const float tint[4], pvr_vertex_t* out, unsigned int flags) {
   float inv_w = 1.0f / v->pos.w;
 
   out->flags = flags;
@@ -244,15 +244,13 @@ static void dc_pack_vert(const ClipFull *v, int fog, const float tint[4],
  * farthest NON-ZERO W-buffer depth. z = 0 is infinity in the ISP's perspective
  * math and corrupts the poly's interpolated output.
  */
-static void dc_pack_vert_2d(const ClipFull *v, float z, const float tint[4],
-                            pvr_vertex_t *out, unsigned int flags) {
+static void dc_pack_vert_2d(const ClipFull* v, float z, const float tint[4], pvr_vertex_t* out, unsigned int flags) {
   out->flags = flags;
   out->x = v->pos.x * (float)s_fb_w;
   out->y = (1.0f - v->pos.y) * (float)s_fb_h;
   out->z = z;
 
-  out->argb = PVR_PACK_COLOR(v->a * tint[3], v->r * tint[0], v->g * tint[1],
-                             v->b * tint[2]);
+  out->argb = PVR_PACK_COLOR(v->a * tint[3], v->r * tint[0], v->g * tint[1], v->b * tint[2]);
   out->oargb = 0;
   out->u = v->u;
   out->v = v->v;
@@ -265,9 +263,7 @@ static void dc_pack_vert_2d(const ClipFull *v, float z, const float tint[4],
  * LIST — PVR_CMD_VERTEX, PVR_CMD_VERTEX, PVR_CMD_VERTEX_EOL. Returns the
  * number of vertices written (0..6).
  */
-static int dc_emit_tri(const float *m, int screen_space, int fog, float z2d,
-                       const float tint[4], const RVertex *a, const RVertex *b,
-                       const RVertex *c, pvr_vertex_t *out) {
+static int dc_emit_tri(const float* m, int screen_space, int fog, float z2d, const float tint[4], const RVertex* a, const RVertex* b, const RVertex* c, pvr_vertex_t* out) {
   ClipFull poly[3];
   int n;
 
@@ -290,13 +286,11 @@ static int dc_emit_tri(const float *m, int screen_space, int fog, float z2d,
     if (screen_space) {
       dc_pack_vert_2d(&poly[0], z2d, tint, &out[written], PVR_CMD_VERTEX);
       dc_pack_vert_2d(&poly[i], z2d, tint, &out[written + 1], PVR_CMD_VERTEX);
-      dc_pack_vert_2d(&poly[i + 1], z2d, tint, &out[written + 2],
-                      PVR_CMD_VERTEX_EOL);
+      dc_pack_vert_2d(&poly[i + 1], z2d, tint, &out[written + 2], PVR_CMD_VERTEX_EOL);
     } else {
       dc_pack_vert(&poly[0], fog, tint, &out[written], PVR_CMD_VERTEX);
       dc_pack_vert(&poly[i], fog, tint, &out[written + 1], PVR_CMD_VERTEX);
-      dc_pack_vert(&poly[i + 1], fog, tint, &out[written + 2],
-                   PVR_CMD_VERTEX_EOL);
+      dc_pack_vert(&poly[i + 1], fog, tint, &out[written + 2], PVR_CMD_VERTEX_EOL);
     }
     written += 3;
   }
@@ -316,23 +310,23 @@ static int dc_emit_tri(const float *m, int screen_space, int fog, float z2d,
  * after translucent, which is exactly what "over everything" needs, and it
  * sorts like opaque so the HUD's flat quads keep their submission order.
  */
-static pvr_list_t dc_list_of(const RDraw *d) {
+static pvr_list_t dc_list_of(const RDraw* d) {
   switch (d->composite) {
-  case R_COMPOSITE_OPAQUE:
-    return PVR_LIST_OP_POLY;
-  case R_COMPOSITE_CUTOUT:
-  case R_COMPOSITE_OVERLAY:
-    return PVR_LIST_PT_POLY;
-  case R_COMPOSITE_TRANSLUCENT:
-    return PVR_LIST_TR_POLY;
-  default:
-    return PVR_LIST_OP_POLY;
+    case R_COMPOSITE_OPAQUE:
+      return PVR_LIST_OP_POLY;
+    case R_COMPOSITE_CUTOUT:
+    case R_COMPOSITE_OVERLAY:
+      return PVR_LIST_PT_POLY;
+    case R_COMPOSITE_TRANSLUCENT:
+      return PVR_LIST_TR_POLY;
+    default:
+      return PVR_LIST_OP_POLY;
   }
 }
 
 /* Depth for a screen-space draw, which the ortho transform gives no usable z.
  */
-static float dc_depth_2d(const RenderFrame *frame, const RDraw *d) {
+static float dc_depth_2d(const RenderFrame* frame, const RDraw* d) {
   /* Overlays ignore scene depth, so pin them at the near plane. */
   if (d->composite == R_COMPOSITE_OVERLAY)
     return 1.0f;
@@ -342,11 +336,10 @@ static float dc_depth_2d(const RenderFrame *frame, const RDraw *d) {
   return (frame->fog_end > 0.0f) ? s_znear / frame->fog_end : 0.001f;
 }
 
-static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
-                           pvr_list_t list) {
+static void dc_submit_draw(const RenderFrame* frame, const RDraw* d, pvr_list_t list) {
   /* Poly header, compiled per draw from the flags. */
   pvr_poly_cxt_t cxt;
-  const DcTexture *tex = NULL;
+  const DcTexture* tex = NULL;
   if (d->textured && d->mesh)
     tex = texture_dc_lookup(d->mesh->texture);
 
@@ -354,8 +347,7 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
    * bind; an untextured header with vertex colour is the same visual as the
    * desktop's white-default MODULATE. */
   if (tex)
-    pvr_poly_cxt_txr(&cxt, list, (int)tex->fmt, tex->w, tex->h, tex->vram,
-                     PVR_FILTER_NEAREST);
+    pvr_poly_cxt_txr(&cxt, list, (int)tex->fmt, tex->w, tex->h, tex->vram, PVR_FILTER_NEAREST);
   else
     pvr_poly_cxt_col(&cxt, list);
 
@@ -392,10 +384,8 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
   float m[16];
   int screen_space = d->screen_space;
   if (!screen_space) {
-    static const float identity[16] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-                                       0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
-                                       0.0f, 0.0f, 0.0f, 1.0f};
-    const float *world = d->mesh ? d->world : identity;
+    static const float identity[16] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+    const float* world = d->mesh ? d->world : identity;
     float pv[16];
     mat_mul(frame->proj, frame->view, pv);
     mat_mul(pv, world, m);
@@ -411,36 +401,30 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
    */
   float z2d = dc_depth_2d(frame, d);
 
-  const RVertex *verts = frame->verts;
+  const RVertex* verts = frame->verts;
   int written = 0;
 
   if (d->mesh) {
-    const Mesh *mesh = d->mesh;
+    const Mesh* mesh = d->mesh;
     for (int i = 0; i + 2 < mesh->index_count; i += 3) {
       if (written + 8 > DC_SCRATCH_VERTS)
         break; /* overflow guard (island1-41ct) */
       written += dc_emit_tri(
-          m, screen_space, fog, z2d, d->tint, &mesh->verts[mesh->indices[i]],
-          &mesh->verts[mesh->indices[i + 1]],
-          &mesh->verts[mesh->indices[i + 2]], &s_scratch[written]);
+          m, screen_space, fog, z2d, d->tint, &mesh->verts[mesh->indices[i]], &mesh->verts[mesh->indices[i + 1]], &mesh->verts[mesh->indices[i + 2]], &s_scratch[written]);
     }
   } else if (d->prim == R_TRIANGLES) {
     for (int i = 0; i + 2 < d->count; i += 3) {
       if (written + 8 > DC_SCRATCH_VERTS)
         break;
-      written += dc_emit_tri(m, screen_space, fog, z2d, d->tint,
-                             &verts[d->first + i], &verts[d->first + i + 1],
-                             &verts[d->first + i + 2], &s_scratch[written]);
+      written += dc_emit_tri(m, screen_space, fog, z2d, d->tint, &verts[d->first + i], &verts[d->first + i + 1], &verts[d->first + i + 2], &s_scratch[written]);
     }
   } else if (d->prim == R_QUADS) {
     for (int i = 0; i + 3 < d->count; i += 4) {
       if (written + 12 > DC_SCRATCH_VERTS)
         break;
-      const RVertex *q = &verts[d->first + i];
-      written += dc_emit_tri(m, screen_space, fog, z2d, d->tint, &q[0], &q[1],
-                             &q[2], &s_scratch[written]);
-      written += dc_emit_tri(m, screen_space, fog, z2d, d->tint, &q[0], &q[2],
-                             &q[3], &s_scratch[written]);
+      const RVertex* q = &verts[d->first + i];
+      written += dc_emit_tri(m, screen_space, fog, z2d, d->tint, &q[0], &q[1], &q[2], &s_scratch[written]);
+      written += dc_emit_tri(m, screen_space, fog, z2d, d->tint, &q[0], &q[2], &q[3], &s_scratch[written]);
     }
   }
   /* R_LINES: the TA has no line primitive; skipped for now (dev-only
@@ -455,22 +439,36 @@ static void dc_submit_draw(const RenderFrame *frame, const RDraw *d,
   /* Bring-up instrumentation: what the ocean/HUD draws actually became. */
   if (s_dbg_prints > 0 && (d->pass == R_PASS_OCEAN || d->pass == R_PASS_HUD) &&
       written > 0) {
-    printf("dc: pass=%d prim=%d comp=%d first=%d cnt=%d ss=%d list=%d w=%d "
-           "v0=(%.1f,%.1f,%.4f) v1=(%.1f,%.1f,%.4f) v2=(%.1f,%.1f,%.4f)\n",
-           (int)d->pass, (int)d->prim, (int)d->composite, d->first, d->count,
-           d->screen_space, (int)list, written, s_scratch[0].x, s_scratch[0].y,
-           s_scratch[0].z, s_scratch[1].x, s_scratch[1].y, s_scratch[1].z,
-           s_scratch[2].x, s_scratch[2].y, s_scratch[2].z);
+    printf(
+        "dc: pass=%d prim=%d comp=%d first=%d cnt=%d ss=%d list=%d w=%d "
+        "v0=(%.1f,%.1f,%.4f) v1=(%.1f,%.1f,%.4f) v2=(%.1f,%.1f,%.4f)\n",
+        (int)d->pass,
+        (int)d->prim,
+        (int)d->composite,
+        d->first,
+        d->count,
+        d->screen_space,
+        (int)list,
+        written,
+        s_scratch[0].x,
+        s_scratch[0].y,
+        s_scratch[0].z,
+        s_scratch[1].x,
+        s_scratch[1].y,
+        s_scratch[1].z,
+        s_scratch[2].x,
+        s_scratch[2].y,
+        s_scratch[2].z);
     s_dbg_prints--;
   }
 }
 
-static void dc_submit_list(pvr_list_t list, const RenderFrame *frame) {
+static void dc_submit_list(pvr_list_t list, const RenderFrame* frame) {
   int rc = pvr_list_begin(list);
   if (s_dbg_prints > 0 && rc != 0)
     printf("dc ERR: pvr_list_begin(%d) = %d\n", (int)list, rc);
   for (int i = 0; i < frame->draw_count; i++) {
-    const RDraw *d = &frame->draws[i];
+    const RDraw* d = &frame->draws[i];
     if (dc_list_of(d) != list)
       continue;
     dc_submit_draw(frame, d, list);
@@ -481,7 +479,7 @@ static void dc_submit_list(pvr_list_t list, const RenderFrame *frame) {
 }
 
 void render_present(int fb_w, int fb_h) {
-  const RenderFrame *frame = r_frame();
+  const RenderFrame* frame = r_frame();
 
   if (fb_w > 0)
     s_fb_w = fb_w;
@@ -515,7 +513,9 @@ void render_present(int fb_w, int fb_h) {
    */
   if (s_dbg_prints > 0) {
     printf("dc frame: draws=%d verts=%d znear=%.3f zsky=%.5f\n",
-           frame->draw_count, frame->stat_verts, s_znear,
+           frame->draw_count,
+           frame->stat_verts,
+           s_znear,
            (frame->fog_end > 0.0f) ? s_znear / frame->fog_end : 0.001f);
   }
   pvr_scene_begin();

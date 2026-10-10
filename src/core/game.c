@@ -1,10 +1,9 @@
 #include "game.h"
 
+#include <cglm/cglm.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-
-#include <cglm/cglm.h>
 
 #include "camera.h"
 #include "car.h"
@@ -51,9 +50,11 @@ static Mesh s_parcel;
  */
 static ChaseCam s_chase;
 static CarState s_veh;
-static float s_bank = 0.0f;  /* radians; leans into the turn */
-static float s_pitch = 0.0f; /* radians nose-up; accel trim + terrain (island1-9gio) */
-static float s_prev_speed_ms = 0.0f; /* last tick, for the accel that drives pitch */
+static float s_bank = 0.0f; /* radians; leans into the turn */
+static float s_pitch =
+    0.0f; /* radians nose-up; accel trim + terrain (island1-9gio) */
+static float s_prev_speed_ms =
+    0.0f; /* last tick, for the accel that drives pitch */
 
 /* Active camera position, sampled each render for prop LOD (island1-1927). */
 static float s_cam_pos[3];
@@ -63,17 +64,22 @@ static float s_cam_pos[3];
  * walking on foot. On foot the player snaps to the island surface and cannot
  * walk into deep water; F (ACT_VEHICLE) enters/exits next to the car.
  */
-typedef enum { MODE_DRIVE, MODE_FOOT } PlayerMode;
+typedef enum { MODE_DRIVE,
+               MODE_FOOT } PlayerMode;
 
-#define FOOT_SPEED 4.5f  /* full-pace walk, m/s; the car stays the fast option */
-#define FOOT_ACCEL 8.0f  /* speed ease rate, 1/s (island1-7duk) */
-#define FOOT_TURN 8.0f   /* heading ease rate, 1/s; faces the move direction */
-#define FOOT_WADE -0.8f  /* ground below this is too deep to walk */
-#define FOOT_WALK_MIN 0.05f /* stick deflection below this keeps last heading */
-#define WALK_RADIUS 0.4f    /* on-foot collider, m (island1-7duk) */
-#define WALK_HOUSE_R 2.2f   /* house wall circle around the origin */
-#define WALK_POST_R 0.2f    /* depot sign post */
-#define WALK_POST_OX 1.6f   /* post offset from the depot origin, +x */
+#define FOOT_SPEED                                                            \
+  4.5f                  /* full-pace walk, m/s; the car stays the fast option \
+                         */
+#define FOOT_ACCEL 8.0f /* speed ease rate, 1/s (island1-7duk) */
+#define FOOT_TURN 8.0f  /* heading ease rate, 1/s; faces the move direction */
+#define FOOT_WADE -0.8f /* ground below this is too deep to walk */
+#define FOOT_WALK_MIN                                                       \
+  0.05f                   /* stick deflection below this keeps last heading \
+                           */
+#define WALK_RADIUS 0.4f  /* on-foot collider, m (island1-7duk) */
+#define WALK_HOUSE_R 2.2f /* house wall circle around the origin */
+#define WALK_POST_R 0.2f  /* depot sign post */
+#define WALK_POST_OX 1.6f /* post offset from the depot origin, +x */
 #define VEHICLE_REACH 3.5f
 #define VEHICLE_EXIT_OFFSET 2.6f
 
@@ -116,9 +122,9 @@ static Mesh s_player_mesh;
 
 #define HOUSE_COUNT 4
 #define NPC_LOOK_RANGE 30.0f
-#define TALK_RANGE                                                             \
-  3.0f /* on-foot conversation radius (island1-9fm3);                          \
-        * wider than VEHICLE_EXIT_OFFSET so stepping out of                    \
+#define TALK_RANGE                                          \
+  3.0f /* on-foot conversation radius (island1-9fm3);       \
+        * wider than VEHICLE_EXIT_OFFSET so stepping out of \
         * the car at the doorstep is already in range */
 
 _Static_assert(HOUSE_COUNT == RESIDENT_COUNT,
@@ -158,7 +164,7 @@ static House s_houses[HOUSE_COUNT];
 static vec3 s_depot;
 
 static float s_toast_timer = 0.0f;
-static const char *s_toast_msg = "+1  PACKAGE DELIVERED";
+static const char* s_toast_msg = "+1  PACKAGE DELIVERED";
 static int s_delivery_house = -1; /* resident awaiting the open reaction */
 static int s_step_seq_seen = -1;  /* quest step entry hook (island1-f9x2) */
 static vec3 s_pkg_pos;
@@ -192,13 +198,13 @@ static void quest_place_package(void) {
 }
 
 /* Position of whatever the player is currently controlling. */
-static const float *active_pos(void) {
+static const float* active_pos(void) {
   return (s_mode == MODE_FOOT) ? s_player.pos : s_veh.pos;
 }
 
 /* The active objective: the depot for pickup/claim steps, else the step's
  * resident (quest chains drive it, island1-f9x2). */
-static const float *active_target(void) {
+static const float* active_target(void) {
   QuestStepType t = quest_step_type();
   if ((t == QSTEP_DELIVER || t == QSTEP_TALK) && quest_step_target() >= 0)
     return s_houses[quest_step_target()].resident;
@@ -217,7 +223,7 @@ static int s_talk_house = -1;
 static int s_delivery_pending;
 
 /* Contiguous non-NULL entries at the head of a line set. */
-static int count_lines(const char *const *set, int cap) {
+static int count_lines(const char* const* set, int cap) {
   int n = 0;
   while (n < cap && set[n])
     n++;
@@ -225,7 +231,7 @@ static int count_lines(const char *const *set, int cap) {
 }
 
 /* Seeded pick with no immediate repeat for this speaker. */
-static const char *pick_line(const char *const *set, int cap, int speaker) {
+static const char* pick_line(const char* const* set, int cap, int speaker) {
   int n = count_lines(set, cap);
   if (n <= 0)
     return NULL;
@@ -238,9 +244,9 @@ static const char *pick_line(const char *const *set, int cap, int speaker) {
 
 /* Package hand-off chatter: one of BREN's lines in the textbox. */
 static void start_keeper_talk(void) {
-  const Dialogue *d = depot_dialogue();
-  const char *line = pick_line(d->lines_idle, 4, RESIDENT_COUNT);
-  const char *lines[1] = {line};
+  const Dialogue* d = depot_dialogue();
+  const char* line = pick_line(d->lines_idle, 4, RESIDENT_COUNT);
+  const char* lines[1] = {line};
   dialog_start(d->name, lines, 1);
 }
 
@@ -263,7 +269,7 @@ static void npc_tick(void) {
   if (s_mode != MODE_FOOT || dialog_active())
     return;
 
-  const float *p = s_player.pos;
+  const float* p = s_player.pos;
   float best = TALK_RANGE * TALK_RANGE;
   for (int i = 0; i < HOUSE_COUNT; i++) {
     float dx = p[0] - s_houses[i].resident[0];
@@ -278,11 +284,11 @@ static void npc_tick(void) {
     return;
 
   /* The line set follows the current quest step (island1-f9x2). */
-  const Dialogue *d = resident_dialogue(s_talk_house);
+  const Dialogue* d = resident_dialogue(s_talk_house);
   QuestStepType t = quest_step_type();
   int target = quest_step_target();
   int chain_house = game_target_house();
-  const char *line;
+  const char* line;
   if (t == QSTEP_DELIVER && s_talk_house == target && quest_carried()) {
     line = pick_line(d->lines_delivery, 4, s_talk_house);
     s_delivery_house = s_talk_house;
@@ -295,7 +301,7 @@ static void npc_tick(void) {
     if (t == QSTEP_TALK && s_talk_house == target)
       quest_notify_talk(s_talk_house); /* the talk objective is met */
   }
-  const char *lines[1] = {line};
+  const char* lines[1] = {line};
   dialog_start(d->name, lines, 1);
 }
 
@@ -317,7 +323,9 @@ static void quest_step_entered(void) {
   }
   game_parcel_configure(t == QSTEP_CLAIM ? GAME_PARCEL_LOST
                                          : GAME_PARCEL_ADDRESSED,
-                        &id, &qty, 1);
+                        &id,
+                        &qty,
+                        1);
   quest_place_package();
 }
 
@@ -326,7 +334,7 @@ static void quest_step_entered(void) {
 static void quest_world_tick(float dt) {
   /* Gifts queued by quest.c: show once the current toast has played out. */
   if (s_toast_timer <= 0.0f) {
-    const char *gift = quest_take_toast();
+    const char* gift = quest_take_toast();
     if (gift) {
       s_toast_msg = gift;
       s_toast_timer = TOAST_TIME;
@@ -336,7 +344,7 @@ static void quest_world_tick(float dt) {
   if (quest_step_seq() != s_step_seq_seen)
     quest_step_entered();
 
-  const float *ap = active_pos();
+  const float* ap = active_pos();
   float pdx = ap[0] - s_depot[0];
   float pdz = ap[2] - s_depot[2];
   if (pdx * pdx + pdz * pdz <= QUEST_PICKUP_RANGE * QUEST_PICKUP_RANGE &&
@@ -358,7 +366,7 @@ static void quest_world_tick(float dt) {
 
   /* Residents ease around to watch whatever the player is controlling. */
   for (int i = 0; i < HOUSE_COUNT; i++) {
-    House *h = &s_houses[i];
+    House* h = &s_houses[i];
     float dx = ap[0] - h->resident[0];
     float dz = ap[2] - h->resident[2];
     float target = h->facing;
@@ -393,9 +401,11 @@ static void quest_world_tick(float dt) {
 static float s_trail[TRAIL_MAX * 2];
 static int s_trail_count = 0;
 
-static void trail_clear(void) { s_trail_count = 0; }
+static void trail_clear(void) {
+  s_trail_count = 0;
+}
 
-static void trail_push(const float *pos) {
+static void trail_push(const float* pos) {
   if (s_trail_count > 0) {
     float dx = pos[0] - s_trail[0];
     float dz = pos[2] - s_trail[1];
@@ -414,7 +424,8 @@ static void trail_push(const float *pos) {
     s_trail_count++;
 }
 
-typedef enum { CAM_CHASE, CAM_FLY } CamMode;
+typedef enum { CAM_CHASE,
+               CAM_FLY } CamMode;
 static CamMode s_cam_mode = CAM_CHASE;
 
 /* Front-end screen seen by the last tick; a change to PLAY seeds the chase
@@ -436,14 +447,10 @@ static void build_car(void) {
   const float glass[4] = {0.06f, 0.08f, 0.12f, 1.0f};
 
   mesh_make(&s_car);
-  mesh_add_box(&s_car, (const float[]){0.0f, 0.34f, 0.0f},
-               (const float[]){0.70f, 0.16f, 1.75f}, hull);
-  mesh_add_box(&s_car, (const float[]){0.0f, 0.60f, 0.0f},
-               (const float[]){0.90f, 0.20f, 2.00f}, body);
-  mesh_add_box(&s_car, (const float[]){0.0f, 0.94f, -0.20f},
-               (const float[]){0.60f, 0.22f, 0.80f}, glass);
-  mesh_add_box(&s_car, (const float[]){0.0f, 0.58f, 1.62f},
-               (const float[]){0.55f, 0.12f, 0.38f}, body);
+  mesh_add_box(&s_car, (const float[]){0.0f, 0.34f, 0.0f}, (const float[]){0.70f, 0.16f, 1.75f}, hull);
+  mesh_add_box(&s_car, (const float[]){0.0f, 0.60f, 0.0f}, (const float[]){0.90f, 0.20f, 2.00f}, body);
+  mesh_add_box(&s_car, (const float[]){0.0f, 0.94f, -0.20f}, (const float[]){0.60f, 0.22f, 0.80f}, glass);
+  mesh_add_box(&s_car, (const float[]){0.0f, 0.58f, 1.62f}, (const float[]){0.55f, 0.12f, 0.38f}, body);
 }
 
 /* White cube textured with the parcel tile, so the texture path is visible. */
@@ -451,8 +458,7 @@ static void build_parcel(void) {
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 
   mesh_make(&s_parcel);
-  mesh_add_box(&s_parcel, (const float[]){0.0f, 0.0f, 0.0f},
-               (const float[]){0.35f, 0.35f, 0.35f}, white);
+  mesh_add_box(&s_parcel, (const float[]){0.0f, 0.0f, 0.0f}, (const float[]){0.35f, 0.35f, 0.35f}, white);
   s_parcel.texture = texture_get("textures/parcel_32.png");
 }
 
@@ -464,18 +470,12 @@ static void build_player(void) {
   const float hair[4] = {0.25f, 0.18f, 0.12f, 1.0f};
 
   mesh_make(&s_player_mesh);
-  mesh_add_box(&s_player_mesh, (const float[]){0.0f, 0.42f, 0.0f},
-               (const float[]){0.20f, 0.42f, 0.16f}, pants);
-  mesh_add_box(&s_player_mesh, (const float[]){0.0f, 1.08f, 0.0f},
-               (const float[]){0.30f, 0.30f, 0.18f}, shirt);
-  mesh_add_box(&s_player_mesh, (const float[]){0.0f, 1.58f, 0.0f},
-               (const float[]){0.20f, 0.20f, 0.20f}, skin);
-  mesh_add_box(&s_player_mesh, (const float[]){0.0f, 1.74f, 0.0f},
-               (const float[]){0.22f, 0.08f, 0.22f}, hair);
-  mesh_add_box(&s_player_mesh, (const float[]){-0.44f, 1.05f, 0.0f},
-               (const float[]){0.10f, 0.35f, 0.12f}, shirt);
-  mesh_add_box(&s_player_mesh, (const float[]){0.44f, 1.05f, 0.0f},
-               (const float[]){0.10f, 0.35f, 0.12f}, shirt);
+  mesh_add_box(&s_player_mesh, (const float[]){0.0f, 0.42f, 0.0f}, (const float[]){0.20f, 0.42f, 0.16f}, pants);
+  mesh_add_box(&s_player_mesh, (const float[]){0.0f, 1.08f, 0.0f}, (const float[]){0.30f, 0.30f, 0.18f}, shirt);
+  mesh_add_box(&s_player_mesh, (const float[]){0.0f, 1.58f, 0.0f}, (const float[]){0.20f, 0.20f, 0.20f}, skin);
+  mesh_add_box(&s_player_mesh, (const float[]){0.0f, 1.74f, 0.0f}, (const float[]){0.22f, 0.08f, 0.22f}, hair);
+  mesh_add_box(&s_player_mesh, (const float[]){-0.44f, 1.05f, 0.0f}, (const float[]){0.10f, 0.35f, 0.12f}, shirt);
+  mesh_add_box(&s_player_mesh, (const float[]){0.44f, 1.05f, 0.0f}, (const float[]){0.10f, 0.35f, 0.12f}, shirt);
 }
 
 /* Small pack worn on the player's back while carrying on foot (island1-fhno).
@@ -484,8 +484,7 @@ static void build_pack(void) {
   const float brown[4] = {0.45f, 0.30f, 0.16f, 1.0f};
 
   mesh_make(&s_pack);
-  mesh_add_box(&s_pack, (const float[]){0.0f, 0.0f, 0.0f},
-               (const float[]){0.26f, 0.30f, 0.14f}, brown);
+  mesh_add_box(&s_pack, (const float[]){0.0f, 0.0f, 0.0f}, (const float[]){0.26f, 0.30f, 0.14f}, brown);
 }
 
 /*
@@ -499,34 +498,21 @@ static void build_house(void) {
   const float door[4] = {0.30f, 0.20f, 0.12f, 1.0f};
 
   mesh_make(&s_house);
-  mesh_add_box(&s_house, (const float[]){0.0f, 1.05f, 0.0f},
-               (const float[]){1.8f, 1.05f, 1.5f}, wall);
+  mesh_add_box(&s_house, (const float[]){0.0f, 1.05f, 0.0f}, (const float[]){1.8f, 1.05f, 1.5f}, wall);
 
   /* Two roof slopes, wound outward. */
-  mesh_add_quad(&s_house, (const float[]){-1.95f, 1.9f, 1.78f},
-                (const float[]){1.95f, 1.9f, 1.78f},
-                (const float[]){1.95f, 2.6f, 0.0f},
-                (const float[]){-1.95f, 2.6f, 0.0f}, roof);
-  mesh_add_quad(&s_house, (const float[]){1.95f, 1.9f, -1.78f},
-                (const float[]){-1.95f, 1.9f, -1.78f},
-                (const float[]){-1.95f, 2.6f, 0.0f},
-                (const float[]){1.95f, 2.6f, 0.0f}, roof);
+  mesh_add_quad(&s_house, (const float[]){-1.95f, 1.9f, 1.78f}, (const float[]){1.95f, 1.9f, 1.78f}, (const float[]){1.95f, 2.6f, 0.0f}, (const float[]){-1.95f, 2.6f, 0.0f}, roof);
+  mesh_add_quad(&s_house, (const float[]){1.95f, 1.9f, -1.78f}, (const float[]){-1.95f, 1.9f, -1.78f}, (const float[]){-1.95f, 2.6f, 0.0f}, (const float[]){1.95f, 2.6f, 0.0f}, roof);
 
   /* Gable ends close the triangle under the ridge. */
-  mesh_add_triangle(&s_house, (const float[]){-1.8f, 2.1f, -1.5f},
-                    (const float[]){-1.8f, 2.1f, 1.5f},
-                    (const float[]){-1.8f, 2.6f, 0.0f}, wall);
-  mesh_add_triangle(&s_house, (const float[]){1.8f, 2.1f, 1.5f},
-                    (const float[]){1.8f, 2.1f, -1.5f},
-                    (const float[]){1.8f, 2.6f, 0.0f}, wall);
+  mesh_add_triangle(&s_house, (const float[]){-1.8f, 2.1f, -1.5f}, (const float[]){-1.8f, 2.1f, 1.5f}, (const float[]){-1.8f, 2.6f, 0.0f}, wall);
+  mesh_add_triangle(&s_house, (const float[]){1.8f, 2.1f, 1.5f}, (const float[]){1.8f, 2.1f, -1.5f}, (const float[]){1.8f, 2.6f, 0.0f}, wall);
 
-  mesh_add_box(&s_house, (const float[]){0.0f, 0.7f, 1.52f},
-               (const float[]){0.42f, 0.7f, 0.08f}, door);
+  mesh_add_box(&s_house, (const float[]){0.0f, 0.7f, 1.52f}, (const float[]){0.42f, 0.7f, 0.08f}, door);
 
   /* Mid-distance LOD: the wall box only, no roof/door/eaves. */
   mesh_make(&s_house_lod);
-  mesh_add_box(&s_house_lod, (const float[]){0.0f, 1.05f, 0.0f},
-               (const float[]){1.8f, 1.05f, 1.5f}, wall);
+  mesh_add_box(&s_house_lod, (const float[]){0.0f, 1.05f, 0.0f}, (const float[]){1.8f, 1.05f, 1.5f}, wall);
 }
 
 /* The package depot: a low pad with a post and a bright sign (island1-draq). */
@@ -536,12 +522,9 @@ static void build_depot(void) {
   const float sign[4] = {0.92f, 0.76f, 0.26f, 1.0f};
 
   mesh_make(&s_depot_mesh);
-  mesh_add_box(&s_depot_mesh, (const float[]){0.0f, 0.06f, 0.0f},
-               (const float[]){2.2f, 0.06f, 2.2f}, pad);
-  mesh_add_box(&s_depot_mesh, (const float[]){1.6f, 1.1f, 0.0f},
-               (const float[]){0.10f, 1.1f, 0.10f}, post);
-  mesh_add_box(&s_depot_mesh, (const float[]){1.6f, 2.15f, 0.0f},
-               (const float[]){0.75f, 0.45f, 0.06f}, sign);
+  mesh_add_box(&s_depot_mesh, (const float[]){0.0f, 0.06f, 0.0f}, (const float[]){2.2f, 0.06f, 2.2f}, pad);
+  mesh_add_box(&s_depot_mesh, (const float[]){1.6f, 1.1f, 0.0f}, (const float[]){0.10f, 1.1f, 0.10f}, post);
+  mesh_add_box(&s_depot_mesh, (const float[]){1.6f, 2.15f, 0.0f}, (const float[]){0.75f, 0.45f, 0.06f}, sign);
 }
 
 static void apply_cam_framing(void);
@@ -604,7 +587,7 @@ void game_init(void) {
 
   /* One resident house per island; the resident stands in front of the door. */
   for (int i = 0; i < HOUSE_COUNT; i++) {
-    House *h = &s_houses[i];
+    House* h = &s_houses[i];
     h->base[0] = HOUSE_SITES[i][0];
     h->base[2] = HOUSE_SITES[i][1];
     h->base[1] = ground_y(h->base[0], h->base[2]);
@@ -641,20 +624,32 @@ GameMode game_mode(void) {
   return (s_mode == MODE_FOOT) ? GAME_MODE_FOOT : GAME_MODE_DRIVE;
 }
 
-const float *game_player_pos(void) { return s_player.pos; }
+const float* game_player_pos(void) {
+  return s_player.pos;
+}
 
 /* Standing in the shallows or deeper (island1-7duk wading hook). */
-int game_player_in_water(void) { return s_player.in_water; }
+int game_player_in_water(void) {
+  return s_player.in_water;
+}
 
-const float *game_vehicle_pos(void) { return s_veh.pos; }
+const float* game_vehicle_pos(void) {
+  return s_veh.pos;
+}
 
 /* Last rendered active-camera eye (attract/chase/fly); test/F3 use. */
-const float *game_cam_pos(void) { return s_cam_pos; }
+const float* game_cam_pos(void) {
+  return s_cam_pos;
+}
 
 /* Presentation pose, radians (island1-9gio): bank >0 leans the top left,
  * pitch >0 is nose-up. Drive mode only; both read zero on foot. */
-float game_vehicle_bank(void) { return s_bank; }
-float game_vehicle_pitch(void) { return s_pitch; }
+float game_vehicle_bank(void) {
+  return s_bank;
+}
+float game_vehicle_pitch(void) {
+  return s_pitch;
+}
 
 GameQuestPhase game_quest_phase(void) {
   if (quest_paused())
@@ -662,32 +657,42 @@ GameQuestPhase game_quest_phase(void) {
   return quest_carried() ? GAME_QUEST_CARRY : GAME_QUEST_REQUEST;
 }
 
-int game_quest_carried(void) { return quest_carried(); }
+int game_quest_carried(void) {
+  return quest_carried();
+}
 
-int game_delivered_count(void) { return quest_delivered(); }
+int game_delivered_count(void) {
+  return quest_delivered();
+}
 
-const float *game_npc_pos(void) {
+const float* game_npc_pos(void) {
   int h = game_target_house();
   if (h < 0)
     h = 0;
   return s_houses[h].resident;
 }
 
-const float *game_resident_pos(int house) {
+const float* game_resident_pos(int house) {
   if (house < 0 || house >= HOUSE_COUNT)
     house = 0;
   return s_houses[house].resident;
 }
 
-const float *game_package_pos(void) { return s_pkg_pos; }
+const float* game_package_pos(void) {
+  return s_pkg_pos;
+}
 
 /* ---- Parcel payload (island1-iim2) ------------------------------------ */
 
-GameParcelKind game_parcel_kind(void) { return s_parcel_kind; }
+GameParcelKind game_parcel_kind(void) {
+  return s_parcel_kind;
+}
 
-int game_parcel_slot_count(void) { return s_parcel_n; }
+int game_parcel_slot_count(void) {
+  return s_parcel_n;
+}
 
-int game_parcel_slot(int i, uint16_t *id, uint16_t *count) {
+int game_parcel_slot(int i, uint16_t* id, uint16_t* count) {
   if (i < 0 || i >= s_parcel_n)
     return 0;
   if (id)
@@ -697,8 +702,7 @@ int game_parcel_slot(int i, uint16_t *id, uint16_t *count) {
   return 1;
 }
 
-void game_parcel_configure(GameParcelKind kind, const uint16_t *ids,
-                           const uint16_t *counts, int n) {
+void game_parcel_configure(GameParcelKind kind, const uint16_t* ids, const uint16_t* counts, int n) {
   if (n < 0)
     n = 0;
   if (n > GAME_PARCEL_MAX_ITEMS)
@@ -734,17 +738,25 @@ int game_parcel_claim(void) {
   return claimed;
 }
 
-const float *game_depot_pos(void) { return s_depot; }
+const float* game_depot_pos(void) {
+  return s_depot;
+}
 
-int game_target_house(void) { return quest_chain_house(); }
+int game_target_house(void) {
+  return quest_chain_house();
+}
 
-int game_beacon_active(void) { return !quest_paused(); }
+int game_beacon_active(void) {
+  return !quest_paused();
+}
 
-const float *game_beacon_pos(void) { return active_target(); }
+const float* game_beacon_pos(void) {
+  return active_target();
+}
 
 /* The pose the chase camera renders right now (island1-38h3): eye and fov
  * from the spring state, look-at on the subject. */
-static void chase_from_pose(CamPose *from, const float subject[3]) {
+static void chase_from_pose(CamPose* from, const float subject[3]) {
   from->pos[0] = s_chase.pos[0];
   from->pos[1] = s_chase.pos[1];
   from->pos[2] = s_chase.pos[2];
@@ -792,17 +804,21 @@ void game_place_player(float x, float z) {
   }
 }
 
-void game_set_hud(int on) { s_hud = on ? 1 : 0; }
+void game_set_hud(int on) {
+  s_hud = on ? 1 : 0;
+}
 
-int game_hud_enabled(void) { return s_hud; }
+int game_hud_enabled(void) {
+  return s_hud;
+}
 
 /* Presentation-only pose; the physics lives in car.c (island1-9n0n). */
 #define CAR_BANK_MAX 0.78f /* radians, ~45 deg lean (island1-9gio) */
 #define CAR_BANK_RATE 4.0f
-#define CAR_PITCH_MAX 0.12f  /* ~7 deg trim under hard accel (island1-9gio) */
+#define CAR_PITCH_MAX 0.12f /* ~7 deg trim under hard accel (island1-9gio) */
 #define CAR_PITCH_RATE 5.0f
-#define CAR_TILT_GAIN 0.5f   /* fraction of the terrain slope added to pose */
-#define CAR_TILT_OFF 1.2f    /* terrain sample offset fore/aft and abeam, m */
+#define CAR_TILT_GAIN 0.5f /* fraction of the terrain slope added to pose */
+#define CAR_TILT_OFF 1.2f  /* terrain sample offset fore/aft and abeam, m */
 
 static void drive_car(float dt) {
   /* Analog triggers feed the axes; the digital actions stay as a fallback. */
@@ -875,8 +891,8 @@ static void drive_car(float dt) {
   if (input_pressed(ACT_DEV_RESET)) {
     car_init(&s_veh, 0.0f, 0.0f, 0.0f);
     s_bank = 0.0f;
-  s_pitch = 0.0f;
-  s_prev_speed_ms = 0.0f;
+    s_pitch = 0.0f;
+    s_prev_speed_ms = 0.0f;
     trail_clear();
     CamPose from;
     chase_from_pose(&from, s_veh.pos);
@@ -924,8 +940,8 @@ static void toggle_vehicle(void) {
       s_player.heading = s_veh.heading;
       s_player.speed_kmh = 0.0f;
       s_player.walk_phase = 0.0f;
-  s_player.walk_speed = 0.0f;
-  s_player.in_water = 0;
+      s_player.walk_speed = 0.0f;
+      s_player.in_water = 0;
       glm_vec3_zero(s_veh.vel);
       s_veh.yaw_rate = 0.0f;
       s_veh.speed_kmh = 0.0f;
@@ -1034,8 +1050,8 @@ static void walk_player(float dt) {
     float dh = wrap_pi(want - s_player.heading);
     s_player.heading += dh * (1.0f - expf(-FOOT_TURN * dt));
   }
-  s_player.walk_speed += (target - s_player.walk_speed) *
-                         (1.0f - expf(-FOOT_ACCEL * dt));
+  s_player.walk_speed +=
+      (target - s_player.walk_speed) * (1.0f - expf(-FOOT_ACCEL * dt));
 
   if (mlen > FOOT_WALK_MIN && s_player.walk_speed > 0.01f) {
     float inv = 1.0f / mlen;
@@ -1142,14 +1158,10 @@ void game_tick(float dt) {
 /* Sky: a normalised window-space quad with a vertical gradient. */
 static void emit_sky(void) {
   r_pass(R_PASS_SKY);
-  int base = r_vertex(0.0f, 0.0f, 0.0f, SKY_COLOR_R, SKY_COLOR_G, SKY_COLOR_B,
-                      1.0f, 0.0f, 0.0f);
-  r_vertex(1.0f, 0.0f, 0.0f, SKY_COLOR_R, SKY_COLOR_G, SKY_COLOR_B, 1.0f, 0.0f,
-           0.0f);
-  r_vertex(1.0f, 1.0f, 0.0f, SKY_ZENITH_R, SKY_ZENITH_G, SKY_ZENITH_B, 1.0f,
-           1.0f, 0.0f);
-  r_vertex(0.0f, 1.0f, 0.0f, SKY_ZENITH_R, SKY_ZENITH_G, SKY_ZENITH_B, 1.0f,
-           1.0f, 0.0f);
+  int base = r_vertex(0.0f, 0.0f, 0.0f, SKY_COLOR_R, SKY_COLOR_G, SKY_COLOR_B, 1.0f, 0.0f, 0.0f);
+  r_vertex(1.0f, 0.0f, 0.0f, SKY_COLOR_R, SKY_COLOR_G, SKY_COLOR_B, 1.0f, 0.0f, 0.0f);
+  r_vertex(1.0f, 1.0f, 0.0f, SKY_ZENITH_R, SKY_ZENITH_G, SKY_ZENITH_B, 1.0f, 1.0f, 0.0f);
+  r_vertex(0.0f, 1.0f, 0.0f, SKY_ZENITH_R, SKY_ZENITH_G, SKY_ZENITH_B, 1.0f, 1.0f, 0.0f);
 
   RDraw d = {0};
   d.prim = R_QUADS;
@@ -1213,10 +1225,10 @@ static void emit_ocean(float t) {
   memcpy(proj, r_frame()->proj, sizeof(proj));
   memcpy(view, r_frame()->view, sizeof(view));
   glm_mat4_mul(proj, view, clip);
-  frustum_extract((const float *)clip, planes);
+  frustum_extract((const float*)clip, planes);
 
   /* view is column-major; eye = -R^T * t. */
-  const float *vf = (const float *)view;
+  const float* vf = (const float*)view;
   const float ex = -(vf[0] * vf[12] + vf[1] * vf[13] + vf[2] * vf[14]);
   const float ez = -(vf[8] * vf[12] + vf[9] * vf[13] + vf[10] * vf[14]);
 
@@ -1329,7 +1341,7 @@ static void emit_car(float t) {
    * rotation drops the nose, so negate. */
   glm_rotate(world, -s_pitch, (vec3){1.0f, 0.0f, 0.0f});
 
-  r_mesh(&s_car, (const float *)world, white);
+  r_mesh(&s_car, (const float*)world, white);
 }
 
 /* The walking player (island1-zku4/urkr): humanoid mesh on the island surface.
@@ -1346,7 +1358,7 @@ static void emit_player(float t) {
       world, (vec3){s_player.pos[0], s_player.pos[1] + bob, s_player.pos[2]});
   glm_rotate(world, s_player.heading, (vec3){0.0f, 1.0f, 0.0f});
 
-  r_mesh(&s_player_mesh, (const float *)world, white);
+  r_mesh(&s_player_mesh, (const float*)world, white);
 }
 
 /*
@@ -1378,15 +1390,14 @@ static void emit_parcel(float t) {
     glm_rotate(world, t * 0.4f, (vec3){0.0f, 1.0f, 0.0f});
   } else {
     glm_translate(world,
-                  (vec3){s_pkg_pos[0], s_pkg_pos[1] + 0.18f * sinf(t * 2.0f),
-                         s_pkg_pos[2]});
+                  (vec3){s_pkg_pos[0], s_pkg_pos[1] + 0.18f * sinf(t * 2.0f), s_pkg_pos[2]});
     glm_rotate(world, t * 0.8f, (vec3){0.0f, 1.0f, 0.0f});
   }
 
   if (lod_level(world[3][0] - s_cam_pos[0], world[3][2] - s_cam_pos[2]) ==
       LOD_FAR)
     return;
-  r_mesh(&s_parcel, (const float *)world, white);
+  r_mesh(&s_parcel, (const float*)world, white);
 }
 
 /* All recipient houses. */
@@ -1404,8 +1415,7 @@ static void emit_houses(float t) {
                              s_houses[i].base[2] - s_cam_pos[2]);
     if (lod == LOD_FAR)
       continue;
-    r_mesh(lod == LOD_NEAR ? &s_house : &s_house_lod, (const float *)world,
-           white);
+    r_mesh(lod == LOD_NEAR ? &s_house : &s_house_lod, (const float*)world, white);
   }
 }
 
@@ -1421,7 +1431,7 @@ static void emit_depot(float t) {
       LOD_FAR)
     return;
   glm_translate(world, s_depot);
-  r_mesh(&s_depot_mesh, (const float *)world, white);
+  r_mesh(&s_depot_mesh, (const float*)world, white);
 }
 
 /* The residents, each eased around to watch the player when nearby. */
@@ -1437,7 +1447,7 @@ static void emit_residents(float t) {
     if (lod_level(s_houses[i].resident[0] - s_cam_pos[0],
                   s_houses[i].resident[2] - s_cam_pos[2]) != LOD_NEAR)
       continue;
-    r_mesh(&s_player_mesh, (const float *)world, HOUSE_TINT[i]);
+    r_mesh(&s_player_mesh, (const float*)world, HOUSE_TINT[i]);
   }
 }
 
@@ -1450,17 +1460,15 @@ static void emit_beacon(float t) {
   if (quest_paused())
     return;
 
-  const float *p = active_target();
+  const float* p = active_target();
   const QuestStepType qt = quest_step_type();
   const int pickup = (qt == QSTEP_PICKUP || qt == QSTEP_CLAIM);
-  float color[4] = {pickup ? 0.35f : 0.45f, pickup ? 0.85f : 1.0f,
-                    pickup ? 1.0f : 0.45f, 0.0f};
+  float color[4] = {pickup ? 0.35f : 0.45f, pickup ? 0.85f : 1.0f, pickup ? 1.0f : 0.45f, 0.0f};
 
   r_pass(R_PASS_PARTICLES);
   for (int k = 0; k < 4; k++) {
     color[3] = 0.34f - (float)k * 0.07f;
-    float bb[3] = {p[0], p[1] + 1.0f + (float)k * 1.6f + 0.1f * sinf(t * 2.0f),
-                   p[2]};
+    float bb[3] = {p[0], p[1] + 1.0f + (float)k * 1.6f + 0.1f * sinf(t * 2.0f), p[2]};
     r_billboard(bb, 1.2f - (float)k * 0.18f, 1.8f, color);
   }
 
@@ -1491,7 +1499,7 @@ static void emit_pack(float t) {
   glm_rotate(world, s_player.heading, (vec3){0.0f, 1.0f, 0.0f});
   glm_translate(world, (vec3){0.0f, 1.05f, -0.22f});
 
-  r_mesh(&s_pack, (const float *)world, white);
+  r_mesh(&s_pack, (const float*)world, white);
 }
 
 /* Foam wake following the car's recorded path, floating just above the waves.
@@ -1532,9 +1540,9 @@ static float wrap_pi(float a) {
  * rig's eased heading, or the fly cam's yaw (0 = +X) folded into the same
  * convention. Marks past +/-90 degrees clamp to the tape edge.
  */
-static void draw_compass(const float *white) {
-  const float *obs = active_pos();
-  const float *obj = active_target();
+static void draw_compass(const float* white) {
+  const float* obs = active_pos();
+  const float* obj = active_target();
   float view_yaw;
   if (s_cam_mode == CAM_CHASE)
     view_yaw = s_chase.heading_lag;
@@ -1552,23 +1560,19 @@ static void draw_compass(const float *white) {
   const float inv_h = 1.0f / (float)s_view_h;
 
   const float bg[4] = {0.02f, 0.03f, 0.05f, 0.50f};
-  r_rect_2d((cx - half) * inv_w, ((float)s_view_h - top - h) * inv_h, w * inv_w,
-            h * inv_h, bg);
+  r_rect_2d((cx - half) * inv_w, ((float)s_view_h - top - h) * inv_h, w * inv_w, h * inv_h, bg);
 
-  static const char *card[4] = {"N", "E", "S", "W"};
-  const float card_a[4] = {0.0f, -ISLAND_PI / 2.0f, ISLAND_PI,
-                           ISLAND_PI / 2.0f};
+  static const char* card[4] = {"N", "E", "S", "W"};
+  const float card_a[4] = {0.0f, -ISLAND_PI / 2.0f, ISLAND_PI, ISLAND_PI / 2.0f};
   for (int i = 0; i < 4; i++) {
     float rc = wrap_pi(card_a[i] - view_yaw);
     if (rc < -span || rc > span)
       continue;
-    r_text_2d((int)(cx - (rc / span) * half - 4.0f), (int)top + 3, 1.0f,
-              card[i], white);
+    r_text_2d((int)(cx - (rc / span) * half - 4.0f), (int)top + 3, 1.0f, card[i], white);
   }
 
   const float tick[4] = {1.0f, 1.0f, 1.0f, 0.75f};
-  r_rect_2d((cx - 1.0f) * inv_w, ((float)s_view_h - top - h + 2.0f) * inv_h,
-            2.0f * inv_w, (h - 4.0f) * inv_h, tick);
+  r_rect_2d((cx - 1.0f) * inv_w, ((float)s_view_h - top - h + 2.0f) * inv_h, 2.0f * inv_w, (h - 4.0f) * inv_h, tick);
 
   float mx = cx - (rel / span) * half;
   if (rel > span)
@@ -1576,8 +1580,7 @@ static void draw_compass(const float *white) {
   else if (rel < -span)
     mx = cx + half - 2.0f;
   const float mark[4] = {1.0f, 0.95f, 0.40f, 1.0f};
-  r_rect_2d((mx - 2.0f) * inv_w, ((float)s_view_h - top - h + 1.0f) * inv_h,
-            4.0f * inv_w, (h - 2.0f) * inv_h, mark);
+  r_rect_2d((mx - 2.0f) * inv_w, ((float)s_view_h - top - h + 1.0f) * inv_h, 4.0f * inv_w, (h - 2.0f) * inv_h, mark);
 }
 
 void game_render(float frame_dt) {
@@ -1605,26 +1608,24 @@ void game_render(float frame_dt) {
     menu_cam_eye(s_cam_pos);
   } else if (s_cam_mode == CAM_CHASE) {
     if (s_mode == MODE_FOOT)
-      chase_cam_update(&s_chase, s_player.pos, s_player.heading,
-                       s_player.speed_kmh, s_view_w, s_view_h, frame_dt);
+      chase_cam_update(&s_chase, s_player.pos, s_player.heading, s_player.speed_kmh, s_view_w, s_view_h, frame_dt);
     else
-      chase_cam_update(&s_chase, s_veh.pos, s_veh.heading, s_veh.speed_kmh,
-                       s_view_w, s_view_h, frame_dt);
-    r_camera((const float *)s_chase.view, (const float *)s_chase.proj);
+      chase_cam_update(&s_chase, s_veh.pos, s_veh.heading, s_veh.speed_kmh, s_view_w, s_view_h, frame_dt);
+    r_camera((const float*)s_chase.view, (const float*)s_chase.proj);
     s_cam_pos[0] = s_chase.pos[0];
     s_cam_pos[1] = s_chase.pos[1];
     s_cam_pos[2] = s_chase.pos[2];
   } else {
     cam_update(&s_cam, s_view_w, s_view_h);
-    r_camera((const float *)s_cam.view, (const float *)s_cam.proj);
+    r_camera((const float*)s_cam.view, (const float*)s_cam.proj);
     s_cam_pos[0] = s_cam.pos[0];
     s_cam_pos[1] = s_cam.pos[1];
     s_cam_pos[2] = s_cam.pos[2];
   }
 
-  emit_sky();
-  emit_ocean(s_time);
-  terrain_emit(s_cam_pos);
+  // emit_sky();
+  // emit_ocean(s_time);
+  // terrain_emit(s_cam_pos);
   emit_wake(s_time);
   emit_depot(s_time);
   emit_houses(s_time);
@@ -1656,19 +1657,16 @@ void game_render(float frame_dt) {
     /* px -> normalized, y flipped bottom-up like dialog.c's rect_px. */
     float nx = (float)bx / (float)s_view_w;
     float ny = 1.0f - (float)(by + bh) / (float)s_view_h;
-    r_rect_2d(nx - 0.004f, ny - 0.010f, (float)bw / (float)s_view_w + 0.008f,
-              (float)bh / (float)s_view_h + 0.020f, edge);
-    r_rect_2d(nx, ny, (float)bw / (float)s_view_w, (float)bh / (float)s_view_h,
-              panel);
+    r_rect_2d(nx - 0.004f, ny - 0.010f, (float)bw / (float)s_view_w + 0.008f, (float)bh / (float)s_view_h + 0.020f, edge);
+    r_rect_2d(nx, ny, (float)bw / (float)s_view_w, (float)bh / (float)s_view_h, panel);
     r_text_2d(bx + 8, by + 6, 1.0f, "INVENTORY", white);
     if (inv_used() == 0) {
       r_text_2d(bx + 8, by + 20, 1.0f, "EMPTY", white);
     } else {
       for (int i = 0; i < inv_used(); i++) {
-        const InvSlot *slot = inv_slot(i);
-        const ItemDef *def = item_def(slot->id);
-        snprintf(buf, sizeof(buf), "%s  x%d", def ? def->name : "?",
-                 slot->count);
+        const InvSlot* slot = inv_slot(i);
+        const ItemDef* def = item_def(slot->id);
+        snprintf(buf, sizeof(buf), "%s  x%d", def ? def->name : "?", slot->count);
         r_text_2d(bx + 8, by + 20 + i * 10, 1.0f, buf, white);
       }
     }
@@ -1688,16 +1686,13 @@ void game_render(float frame_dt) {
     r_text_2d(12, 10, 2.0f, s_mode == MODE_FOOT ? "ON FOOT" : "CHASE", white);
     r_text_2d(12, 32, 1.5f, buf, white);
     if (s_mode == MODE_FOOT)
-      r_text_2d(12, 54, 1.0f, near_car ? "F GET IN" : "WASD WALK  F3 STATS",
-                white);
+      r_text_2d(12, 54, 1.0f, near_car ? "F GET IN" : "WASD WALK  F3 STATS", white);
     else
-      r_text_2d(12, 54, 1.0f,
-                on_land ? "F GET OUT  F3 STATS" : "DRIVE TO LAND TO DISEMBARK",
-                white);
+      r_text_2d(12, 54, 1.0f, on_land ? "F GET OUT  F3 STATS" : "DRIVE TO LAND TO DISEMBARK", white);
 
     /* Objective lines follow the current quest step (island1-f9x2). */
-    const float *ap = active_pos();
-    const float *tp = active_target();
+    const float* ap = active_pos();
+    const float* tp = active_target();
     float odx = ap[0] - tp[0];
     float odz = ap[2] - tp[2];
     float odist = sqrtf(odx * odx + odz * odz);
@@ -1722,20 +1717,18 @@ void game_render(float frame_dt) {
         if (odist <= TALK_RANGE)
           r_text_2d(12, 76, 1.0f, "E TALK TO DELIVER", white);
         else {
-          snprintf(buf, sizeof(buf), "HOUSE %d  %.0fm", quest_step_target() + 1,
-                   odist);
+          snprintf(buf, sizeof(buf), "HOUSE %d  %.0fm", quest_step_target() + 1, odist);
           r_text_2d(12, 76, 1.0f, buf, white);
         }
       } else if (qt == QSTEP_TALK) {
         if (odist <= TALK_RANGE)
           r_text_2d(12, 76, 1.0f, "E TALK TO RESIDENT", white);
         else {
-          snprintf(buf, sizeof(buf), "RESIDENT %d  %.0fm",
-                   quest_step_target() + 1, odist);
+          snprintf(buf, sizeof(buf), "RESIDENT %d  %.0fm", quest_step_target() + 1, odist);
           r_text_2d(12, 76, 1.0f, buf, white);
         }
       }
-      const char *obj = quest_step_prompt();
+      const char* obj = quest_step_prompt();
       if (obj)
         r_text_2d(12, 112, 1.0f, obj, white);
     }
@@ -1749,7 +1742,7 @@ void game_render(float frame_dt) {
      * head position through this frame's view/proj and drop the label just
      * above it; hidden when behind the camera or off screen. */
     if (s_mode == MODE_FOOT && !dialog_active() && s_talk_house >= 0) {
-      const float *rp = s_houses[s_talk_house].resident;
+      const float* rp = s_houses[s_talk_house].resident;
       mat4 vp;
       vec4 head = {rp[0], rp[1] + 2.05f, rp[2], 1.0f};
       vec4 clip;
@@ -1777,14 +1770,14 @@ void game_render(float frame_dt) {
       if (a > 1.0f)
         a = 1.0f;
       const float toast_col[4] = {1.0f, 0.95f, 0.40f, a};
-      const char *msg = s_toast_msg;
+      const char* msg = s_toast_msg;
       int tw = (int)(8.0f * 3.0f * (float)strlen(msg));
       r_text_2d((s_view_w - tw) / 2, s_view_h / 3, 3.0f, msg, toast_col);
     }
   }
 
   /* Snapshot after the scene/HUD so the overlay itself is not counted. */
-  const RenderFrame *fr = r_frame();
+  const RenderFrame* fr = r_frame();
   int pass_v[R_PASS_COUNT];
   int pass_d[R_PASS_COUNT];
   memcpy(pass_v, fr->pass_verts, sizeof(pass_v));
@@ -1796,22 +1789,19 @@ void game_render(float frame_dt) {
     int x = s_view_w - 180;
     int y = 10;
 
-    snprintf(buf, sizeof(buf), "DRAWS %d  VERTS %d", fr->stat_draws,
-             fr->stat_verts);
+    snprintf(buf, sizeof(buf), "DRAWS %d  VERTS %d", fr->stat_draws, fr->stat_verts);
     r_text_2d(x, y, 1.0f, buf, white);
     y += 12;
 
     for (int i = 0; i < R_PASS_COUNT; i++) {
       if (pass_d[i] == 0)
         continue;
-      snprintf(buf, sizeof(buf), "%-7s %5dv %2dd", r_pass_name((RPass)i),
-               pass_v[i], pass_d[i]);
+      snprintf(buf, sizeof(buf), "%-7s %5dv %2dd", r_pass_name((RPass)i), pass_v[i], pass_d[i]);
       r_text_2d(x, y, 1.0f, buf, white);
       y += 12;
     }
 
-    snprintf(buf, sizeof(buf), "OCEAN %d/%d CELLS", s_ocean_drawn,
-             s_ocean_total);
+    snprintf(buf, sizeof(buf), "OCEAN %d/%d CELLS", s_ocean_drawn, s_ocean_total);
     r_text_2d(x, y, 1.0f, buf, white);
     y += 12;
 

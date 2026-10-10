@@ -1,8 +1,7 @@
 #include <miniaudio.h>
 #include <stdio.h>
 
-int main(void)
-{
+int main(void) {
   ma_uint32 ver_major = 0, ver_minor = 0, ver_patch = 0;
   ma_version(&ver_major, &ver_minor, &ver_patch);
   printf("miniaudio %u.%u.%u\n", ver_major, ver_minor, ver_patch);

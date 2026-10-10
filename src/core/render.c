@@ -19,10 +19,10 @@ static int s_view_h = 0;
 /* Current pass, set by r_pass() and stamped onto each recorded draw. */
 static RPass s_pass = R_PASS_OTHER;
 
-static const char *const s_pass_names[R_PASS_COUNT] = {
+static const char* const s_pass_names[R_PASS_COUNT] = {
     "OTHER", "SKY", "OCEAN", "TERRAIN", "PROPS", "VEH", "PART", "HUD"};
 
-static const char *const s_composite_names[R_COMPOSITE_COUNT] = {
+static const char* const s_composite_names[R_COMPOSITE_COUNT] = {
     "OPAQUE", "CUTOUT", "TRANSLUCENT", "OVERLAY"};
 
 void r_pass(RPass pass) {
@@ -30,13 +30,13 @@ void r_pass(RPass pass) {
     s_pass = pass;
 }
 
-const char *r_pass_name(RPass pass) {
+const char* r_pass_name(RPass pass) {
   if (pass < 0 || pass >= R_PASS_COUNT)
     return "?";
   return s_pass_names[pass];
 }
 
-const char *r_composite_name(RComposite composite) {
+const char* r_composite_name(RComposite composite) {
   if (composite < 0 || composite >= R_COMPOSITE_COUNT)
     return "?";
   return s_composite_names[composite];
@@ -76,7 +76,7 @@ void r_clear(float r, float g, float b, float a) {
   s_frame.clear[3] = a;
 }
 
-void r_camera(const float *view, const float *proj) {
+void r_camera(const float* view, const float* proj) {
   memcpy(s_frame.view, view, 16 * sizeof(float));
   memcpy(s_frame.proj, proj, 16 * sizeof(float));
 }
@@ -88,12 +88,11 @@ void r_fog(int enabled, const float color[4], float start, float end) {
   s_frame.fog_end = end;
 }
 
-int r_vertex(float x, float y, float z, float r, float g, float b, float a,
-             float u, float v) {
+int r_vertex(float x, float y, float z, float r, float g, float b, float a, float u, float v) {
   if (s_frame.vert_count >= R_MAX_VERTS)
     return -1;
 
-  RVertex *vert = &s_frame.verts[s_frame.vert_count];
+  RVertex* vert = &s_frame.verts[s_frame.vert_count];
   vert->x = x;
   vert->y = y;
   vert->z = z;
@@ -106,11 +105,11 @@ int r_vertex(float x, float y, float z, float r, float g, float b, float a,
   return s_frame.vert_count++;
 }
 
-void r_draw(const RDraw *draw) {
+void r_draw(const RDraw* draw) {
   if (s_frame.draw_count >= R_MAX_DRAWS)
     return;
 
-  RDraw *dst = &s_frame.draws[s_frame.draw_count++];
+  RDraw* dst = &s_frame.draws[s_frame.draw_count++];
   *dst = *draw;
   dst->pass = s_pass;
 
@@ -122,8 +121,7 @@ void r_draw(const RDraw *draw) {
   s_frame.pass_draws[s_pass]++;
 }
 
-void r_mesh(const struct Mesh *mesh, const float world[16],
-            const float tint[4]) {
+void r_mesh(const struct Mesh* mesh, const float world[16], const float tint[4]) {
   if (!mesh || mesh->index_count == 0)
     return;
 
@@ -154,28 +152,20 @@ void r_mesh(const struct Mesh *mesh, const float world[16],
 
 void r_billboard(const float pos[3], float w, float h, const float color[4]) {
   /* Camera right/up are the rows of the view rotation (column-major view). */
-  const float *v = s_frame.view;
+  const float* v = s_frame.view;
   float rx = v[0], ry = v[4], rz = v[8];
   float ux = v[1], uy = v[5], uz = v[9];
   float hw = w * 0.5f, hh = h * 0.5f;
 
-  float a[3] = {pos[0] - rx * hw - ux * hh, pos[1] - ry * hw - uy * hh,
-                pos[2] - rz * hw - uz * hh};
-  float b[3] = {pos[0] + rx * hw - ux * hh, pos[1] + ry * hw - uy * hh,
-                pos[2] + rz * hw - uz * hh};
-  float c[3] = {pos[0] + rx * hw + ux * hh, pos[1] + ry * hw + uy * hh,
-                pos[2] + rz * hw + uz * hh};
-  float d[3] = {pos[0] - rx * hw + ux * hh, pos[1] - ry * hw + uy * hh,
-                pos[2] - rz * hw + uz * hh};
+  float a[3] = {pos[0] - rx * hw - ux * hh, pos[1] - ry * hw - uy * hh, pos[2] - rz * hw - uz * hh};
+  float b[3] = {pos[0] + rx * hw - ux * hh, pos[1] + ry * hw - uy * hh, pos[2] + rz * hw - uz * hh};
+  float c[3] = {pos[0] + rx * hw + ux * hh, pos[1] + ry * hw + uy * hh, pos[2] + rz * hw + uz * hh};
+  float d[3] = {pos[0] - rx * hw + ux * hh, pos[1] - ry * hw + uy * hh, pos[2] - rz * hw + uz * hh};
 
-  int first = r_vertex(a[0], a[1], a[2], color[0], color[1], color[2], color[3],
-                       0.0f, 0.0f);
-  r_vertex(b[0], b[1], b[2], color[0], color[1], color[2], color[3], 0.0f,
-           0.0f);
-  r_vertex(c[0], c[1], c[2], color[0], color[1], color[2], color[3], 0.0f,
-           0.0f);
-  r_vertex(d[0], d[1], d[2], color[0], color[1], color[2], color[3], 0.0f,
-           0.0f);
+  int first = r_vertex(a[0], a[1], a[2], color[0], color[1], color[2], color[3], 0.0f, 0.0f);
+  r_vertex(b[0], b[1], b[2], color[0], color[1], color[2], color[3], 0.0f, 0.0f);
+  r_vertex(c[0], c[1], c[2], color[0], color[1], color[2], color[3], 0.0f, 0.0f);
+  r_vertex(d[0], d[1], d[2], color[0], color[1], color[2], color[3], 0.0f, 0.0f);
 
   RDraw draw = {0};
   draw.prim = R_QUADS;
@@ -194,8 +184,7 @@ void r_rect_2d(float x, float y, float w, float h, const float color[4]) {
   int first =
       r_vertex(x, y, 0.0f, color[0], color[1], color[2], color[3], 0.0f, 0.0f);
   r_vertex(x + w, y, 0.0f, color[0], color[1], color[2], color[3], 0.0f, 0.0f);
-  r_vertex(x + w, y + h, 0.0f, color[0], color[1], color[2], color[3], 0.0f,
-           0.0f);
+  r_vertex(x + w, y + h, 0.0f, color[0], color[1], color[2], color[3], 0.0f, 0.0f);
   r_vertex(x, y + h, 0.0f, color[0], color[1], color[2], color[3], 0.0f, 0.0f);
 
   RDraw draw = {0};
@@ -216,8 +205,7 @@ void r_rect_2d(float x, float y, float w, float h, const float color[4]) {
  * the average of the neighbouring segments so a strip through shared points has
  * no gaps at the joins.
  */
-static void ribbon_offset(const float *pts, int n, int i, float hw, float *ox,
-                          float *oz) {
+static void ribbon_offset(const float* pts, int n, int i, float hw, float* ox, float* oz) {
   int ia = (i > 0) ? i - 1 : i;
   int ib = (i < n - 1) ? i + 1 : i;
   float dx = pts[ib * 3 + 0] - pts[ia * 3 + 0];
@@ -232,7 +220,7 @@ static void ribbon_offset(const float *pts, int n, int i, float hw, float *ox,
   *oz = dx / len * hw;
 }
 
-void r_ribbon(const float *pts, int n, float width, const float color[4]) {
+void r_ribbon(const float* pts, int n, float width, const float color[4]) {
   if (!pts || n < 2)
     return;
 
@@ -245,19 +233,15 @@ void r_ribbon(const float *pts, int n, float width, const float color[4]) {
     ribbon_offset(pts, n, i, hw, &ax, &az);
     ribbon_offset(pts, n, i + 1, hw, &bx, &bz);
 
-    const float *p = &pts[i * 3];
-    const float *q = &pts[(i + 1) * 3];
+    const float* p = &pts[i * 3];
+    const float* q = &pts[(i + 1) * 3];
 
-    int v = r_vertex(p[0] - ax, p[1], p[2] - az, color[0], color[1], color[2],
-                     color[3], 0.0f, 0.0f);
+    int v = r_vertex(p[0] - ax, p[1], p[2] - az, color[0], color[1], color[2], color[3], 0.0f, 0.0f);
     if (first < 0)
       first = v;
-    r_vertex(p[0] + ax, p[1], p[2] + az, color[0], color[1], color[2], color[3],
-             0.0f, 0.0f);
-    r_vertex(q[0] + bx, q[1], q[2] + bz, color[0], color[1], color[2], color[3],
-             0.0f, 0.0f);
-    r_vertex(q[0] - bx, q[1], q[2] - bz, color[0], color[1], color[2], color[3],
-             0.0f, 0.0f);
+    r_vertex(p[0] + ax, p[1], p[2] + az, color[0], color[1], color[2], color[3], 0.0f, 0.0f);
+    r_vertex(q[0] + bx, q[1], q[2] + bz, color[0], color[1], color[2], color[3], 0.0f, 0.0f);
+    r_vertex(q[0] - bx, q[1], q[2] - bz, color[0], color[1], color[2], color[3], 0.0f, 0.0f);
     count += 4;
   }
 
@@ -277,7 +261,7 @@ void r_ribbon(const float *pts, int n, float width, const float color[4]) {
   r_draw(&draw);
 }
 
-void r_text_2d(int x, int y, float scale, const char *s, const float color[4]) {
+void r_text_2d(int x, int y, float scale, const char* s, const float color[4]) {
   if (!s || s_frame.width <= 0 || s_frame.height <= 0 || scale <= 0.0f)
     return;
 
@@ -292,7 +276,7 @@ void r_text_2d(int x, int y, float scale, const char *s, const float color[4]) {
     unsigned char ch = (unsigned char)*s;
     if (ch >= 128)
       ch = '?';
-    const unsigned char *glyph = font8x8_basic[ch];
+    const unsigned char* glyph = font8x8_basic[ch];
 
     for (int row = 0; row < 8; row++) {
       unsigned char bits = glyph[row];
@@ -313,16 +297,12 @@ void r_text_2d(int x, int y, float scale, const char *s, const float color[4]) {
         float nw = (float)run * scale * inv_w;
         float nh = scale * inv_h;
 
-        int v = r_vertex(nx, ny, 0.0f, color[0], color[1], color[2], color[3],
-                         0.0f, 0.0f);
+        int v = r_vertex(nx, ny, 0.0f, color[0], color[1], color[2], color[3], 0.0f, 0.0f);
         if (first < 0)
           first = v;
-        r_vertex(nx + nw, ny, 0.0f, color[0], color[1], color[2], color[3],
-                 0.0f, 0.0f);
-        r_vertex(nx + nw, ny + nh, 0.0f, color[0], color[1], color[2], color[3],
-                 0.0f, 0.0f);
-        r_vertex(nx, ny + nh, 0.0f, color[0], color[1], color[2], color[3],
-                 0.0f, 0.0f);
+        r_vertex(nx + nw, ny, 0.0f, color[0], color[1], color[2], color[3], 0.0f, 0.0f);
+        r_vertex(nx + nw, ny + nh, 0.0f, color[0], color[1], color[2], color[3], 0.0f, 0.0f);
+        r_vertex(nx, ny + nh, 0.0f, color[0], color[1], color[2], color[3], 0.0f, 0.0f);
         count += 4;
         col += run;
       }
@@ -346,4 +326,6 @@ void r_text_2d(int x, int y, float scale, const char *s, const float color[4]) {
   r_draw(&draw);
 }
 
-const RenderFrame *r_frame(void) { return &s_frame; }
+const RenderFrame* r_frame(void) {
+  return &s_frame;
+}

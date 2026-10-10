@@ -22,7 +22,8 @@ void game_tick(float dt);
 void game_render(float frame_dt);
 
 /* Player/vehicle mode (island1-zku4); also read by tests and debug tooling. */
-typedef enum { GAME_MODE_DRIVE, GAME_MODE_FOOT } GameMode;
+typedef enum { GAME_MODE_DRIVE,
+               GAME_MODE_FOOT } GameMode;
 GameMode game_mode(void);
 const float* game_player_pos(void);
 const float* game_vehicle_pos(void);
@@ -58,29 +59,29 @@ int game_quest_carried(void);
 int game_delivered_count(void);
 
 /* Target resident (the current recipient house's resident). */
-const float *game_npc_pos(void);
-const float *game_resident_pos(int house); /* any house, clamped */
-const float *game_package_pos(void);
-const float *game_depot_pos(void);
+const float* game_npc_pos(void);
+const float* game_resident_pos(int house); /* any house, clamped */
+const float* game_package_pos(void);
+const float* game_depot_pos(void);
 int game_target_house(void);
 
 /* Objective beacon: where it is and whether it is currently shown. */
 int game_beacon_active(void);
-const float *game_beacon_pos(void);
+const float* game_beacon_pos(void);
 
 /* Parcel payload (island1-iim2). An ADDRESSED parcel has a readable label:
  * it belongs to the resident and is delivered sealed — the player never
  * opens it. A LOST parcel (obscured label / partially open) is ours: claiming
  * moves its stacks into the player inventory. */
-typedef enum { GAME_PARCEL_ADDRESSED, GAME_PARCEL_LOST } GameParcelKind;
+typedef enum { GAME_PARCEL_ADDRESSED,
+               GAME_PARCEL_LOST } GameParcelKind;
 #define GAME_PARCEL_MAX_ITEMS 3
 GameParcelKind game_parcel_kind(void);
 int game_parcel_slot_count(void);
 /* Stack i of the current payload; returns 0 past the end. */
-int game_parcel_slot(int i, uint16_t *id, uint16_t *count);
+int game_parcel_slot(int i, uint16_t* id, uint16_t* count);
 /* (Re)load the payload — quest spawn / tests. Empty or zero stacks drop out. */
-void game_parcel_configure(GameParcelKind kind, const uint16_t *ids,
-                           const uint16_t *counts, int n);
+void game_parcel_configure(GameParcelKind kind, const uint16_t* ids, const uint16_t* counts, int n);
 /* LOST only: move contents into the player inventory. Returns 1 when
  * anything was claimed (leftovers stay in the parcel if the bag is full). */
 int game_parcel_claim(void);

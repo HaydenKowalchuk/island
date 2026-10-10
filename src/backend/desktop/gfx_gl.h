@@ -9,17 +9,17 @@
  * a surprise from the draw before it.
  */
 typedef struct {
-    int lighting;
-    int fog;
-    int texture;
-    int blend;
-    int depth_write;
-    int cull;      /* GL_BACK, GL_NONE */
-    int filter;    /* GL_NEAREST, GL_LINEAR */
-    int tex_env;   /* GL_MODULATE, GL_REPLACE, GL_DECAL */
-    float fog_start;
-    float fog_end;
-    float fog_color[4];
+  int lighting;
+  int fog;
+  int texture;
+  int blend;
+  int depth_write;
+  int cull;    /* GL_BACK, GL_NONE */
+  int filter;  /* GL_NEAREST, GL_LINEAR */
+  int tex_env; /* GL_MODULATE, GL_REPLACE, GL_DECAL */
+  float fog_start;
+  float fog_end;
+  float fog_color[4];
 } GfxState;
 
 /* Global defaults: depth test on, cull back faces, lighting/fog/texture/blend off. */

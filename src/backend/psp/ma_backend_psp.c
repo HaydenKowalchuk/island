@@ -25,8 +25,8 @@ typedef struct ma_device_state_psp {
   ma_uint32 periodSizeInFrames;
   void* pBufferRaw;
   void* pBuffers[2];
-  int    readIndex;
-  int    writeIndex;
+  int readIndex;
+  int writeIndex;
   volatile int running;
   SceUID threadId;
   SceUID slotSema;
@@ -127,13 +127,13 @@ static ma_result ma_device_init__psp(ma_device* pDevice, const void* pDeviceBack
     return MA_OUT_OF_MEMORY;
   }
 
-  pDeviceStatePsp->pDevice            = pDevice;
-  pDeviceStatePsp->periodSizeInBytes  = periodSizeInBytes;
+  pDeviceStatePsp->pDevice = pDevice;
+  pDeviceStatePsp->periodSizeInBytes = periodSizeInBytes;
   pDeviceStatePsp->periodSizeInFrames = periodSizeInFrames;
-  pDeviceStatePsp->readIndex          = 0;
-  pDeviceStatePsp->writeIndex         = 0;
-  pDeviceStatePsp->running            = 0;
-  pDeviceStatePsp->threadId           = 0;
+  pDeviceStatePsp->readIndex = 0;
+  pDeviceStatePsp->writeIndex = 0;
+  pDeviceStatePsp->running = 0;
+  pDeviceStatePsp->threadId = 0;
 
   size_t totalAlloc = (size_t)periodSizeInBytes * 2 + 64;
   pDeviceStatePsp->pBufferRaw = ma_malloc(totalAlloc, ma_device_get_allocation_callbacks(pDevice));
@@ -148,13 +148,12 @@ static ma_result ma_device_init__psp(ma_device* pDevice, const void* pDeviceBack
   pDeviceStatePsp->pBuffers[1] = (void*)(aligned + periodSizeInBytes);
 
   pDeviceStatePsp->slotSema = sceKernelCreateSema("audio_slot", 0, 2, 2, NULL);
-  pDeviceStatePsp->bufSema  = sceKernelCreateSema("audio_buf",  0, 0, 2, NULL);
+  pDeviceStatePsp->bufSema = sceKernelCreateSema("audio_buf", 0, 0, 2, NULL);
 
   g_psp_audio_state = pDeviceStatePsp;
 
   pDeviceStatePsp->running = 1;
-  pDeviceStatePsp->threadId = sceKernelCreateThread("audio_thread", audio_thread_func,
-      0x10, 0x4000, PSP_THREAD_ATTR_USER, 0);
+  pDeviceStatePsp->threadId = sceKernelCreateThread("audio_thread", audio_thread_func, 0x10, 0x4000, PSP_THREAD_ATTR_USER, 0);
   if (pDeviceStatePsp->threadId < 0) {
     pDeviceStatePsp->running = 0;
     g_psp_audio_state = NULL;
@@ -201,7 +200,7 @@ static void ma_device_uninit__psp(ma_device* pDevice) {
 static ma_result ma_device_start__psp(ma_device* pDevice) {
   ma_device_state_psp* pDeviceStatePsp = ma_device_get_backend_state__psp(pDevice);
 
-  pDeviceStatePsp->readIndex  = 0;
+  pDeviceStatePsp->readIndex = 0;
   pDeviceStatePsp->writeIndex = 0;
 
   return MA_SUCCESS;

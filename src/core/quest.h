@@ -22,33 +22,33 @@
  */
 
 typedef enum {
-    QSTEP_PICKUP,
-    QSTEP_DELIVER,
-    QSTEP_TALK,
-    QSTEP_CLAIM,
-    QSTEP_GRANT,
+  QSTEP_PICKUP,
+  QSTEP_DELIVER,
+  QSTEP_TALK,
+  QSTEP_CLAIM,
+  QSTEP_GRANT,
 } QuestStepType;
 
 typedef struct {
-    uint8_t type;      /* QuestStepType */
-    int8_t target;     /* resident index, or -1/-2 dynamic (see above) */
-    uint16_t item;     /* PICKUP/CLAIM payload, GRANT gift (0 = default) */
-    uint16_t count;
-    const char *prompt; /* HUD objective line; NULL = none */
+  uint8_t type;  /* QuestStepType */
+  int8_t target; /* resident index, or -1/-2 dynamic (see above) */
+  uint16_t item; /* PICKUP/CLAIM payload, GRANT gift (0 = default) */
+  uint16_t count;
+  const char* prompt; /* HUD objective line; NULL = none */
 } QuestStep;
 
 typedef struct {
-    const char *name;
-    const QuestStep *steps;
-    uint8_t step_count;
-    uint16_t reward_item;  /* granted into the inventory at chain end */
-    uint16_t reward_count;
+  const char* name;
+  const QuestStep* steps;
+  uint8_t step_count;
+  uint16_t reward_item; /* granted into the inventory at chain end */
+  uint16_t reward_count;
 } QuestChain;
 
-void quest_init(void);            /* chain 0, step 0; call from game_init */
-void quest_start_chain(int idx);  /* force a chain (tests / dev) */
-void quest_tick(float dt);        /* pause countdown + GRANT auto-skip;
-                                   * call only while no dialog is open */
+void quest_init(void);           /* chain 0, step 0; call from game_init */
+void quest_start_chain(int idx); /* force a chain (tests / dev) */
+void quest_tick(float dt);       /* pause countdown + GRANT auto-skip;
+                                  * call only while no dialog is open */
 
 void quest_notify_pickup(void);
 void quest_notify_deliver(int resident);
@@ -56,19 +56,19 @@ void quest_notify_talk(int resident);
 void quest_notify_claim(void);
 
 QuestStepType quest_step_type(void);
-int quest_step_target(void);      /* resolved resident index, or -1 */
+int quest_step_target(void); /* resolved resident index, or -1 */
 uint16_t quest_step_item(void);
 uint16_t quest_step_count(void);
-const char *quest_step_prompt(void);
-const char *quest_chain_name(void);
-int quest_chain_house(void);      /* the chain's first delivery house, or -1 */
-int quest_step_seq(void);         /* bumps on every chain/step change */
+const char* quest_step_prompt(void);
+const char* quest_chain_name(void);
+int quest_chain_house(void); /* the chain's first delivery house, or -1 */
+int quest_step_seq(void);    /* bumps on every chain/step change */
 
 int quest_carried(void);
 int quest_delivered(void);
-int quest_paused(void);           /* post-chain breather */
+int quest_paused(void); /* post-chain breather */
 
 /* One-shot gift toast text ("GIFT: ..."), NULL when none is waiting. */
-const char *quest_take_toast(void);
+const char* quest_take_toast(void);
 
 #endif

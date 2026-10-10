@@ -1,6 +1,6 @@
-#include <stddef.h>
-
 #include "items.h"
+
+#include <stddef.h>
 
 static const ItemDef s_items[ITEM_TOTAL] = {
     {ITEM_NONE, "NONE", "", 0},
@@ -20,8 +20,8 @@ static const ItemDef s_items[ITEM_TOTAL] = {
     {ITEM_SEASHELL, "SEASHELL", "Polished by the tide.", ITEMF_SELLABLE | ITEMF_STACKABLE},
 };
 
-const ItemDef *item_def(int id) {
-    if (id < 0 || id >= ITEM_TOTAL)
-        return NULL;
-    return &s_items[id];
+const ItemDef* item_def(int id) {
+  if (id < 0 || id >= ITEM_TOTAL)
+    return NULL;
+  return &s_items[id];
 }

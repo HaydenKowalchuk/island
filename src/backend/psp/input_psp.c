@@ -1,5 +1,4 @@
 #include <math.h>
-
 #include <pspctrl.h>
 
 #include "game.h"  /* game_mode(): the mapping is mode-aware */
@@ -52,9 +51,17 @@ static int s_prev_dev_reset;
 
 /* Every action this table raises, so a failed poll can release all of them. */
 static const Action s_mapped[] = {
-    ACT_THROTTLE, ACT_BRAKE,     ACT_BOOST,     ACT_INTERACT,
-    ACT_VEHICLE,  ACT_PAUSE,     ACT_INVENTORY, ACT_QUIT,
-    ACT_DEV_CAM,  ACT_DEV_DEBUG, ACT_DEV_RESET,
+    ACT_THROTTLE,
+    ACT_BRAKE,
+    ACT_BOOST,
+    ACT_INTERACT,
+    ACT_VEHICLE,
+    ACT_PAUSE,
+    ACT_INVENTORY,
+    ACT_QUIT,
+    ACT_DEV_CAM,
+    ACT_DEV_DEBUG,
+    ACT_DEV_RESET,
 };
 
 static void key_event(unsigned int buttons, unsigned int mask, Action action) {

@@ -14,19 +14,19 @@
  */
 
 typedef struct {
-    const char *name;
-    const char *lines_idle[4];        /* casual talk, any quest phase */
-    const char *lines_delivery[4];    /* the target resident, package in hand */
-    const char *lines_no_package[3];  /* the target resident, package not picked up */
+  const char* name;
+  const char* lines_idle[4];       /* casual talk, any quest phase */
+  const char* lines_delivery[4];   /* the target resident, package in hand */
+  const char* lines_no_package[3]; /* the target resident, package not picked up */
 } Dialogue;
 
 /* Number of resident dialogues; game.c asserts this matches HOUSE_COUNT. */
 #define RESIDENT_COUNT 4
 
 /* Resident `i` (0..RESIDENT_COUNT-1), one unique voice per house. */
-const Dialogue *resident_dialogue(int i);
+const Dialogue* resident_dialogue(int i);
 
 /* Depot keeper: lines_idle holds the package hand-off chatter. */
-const Dialogue *depot_dialogue(void);
+const Dialogue* depot_dialogue(void);
 
 #endif

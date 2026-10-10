@@ -12,12 +12,11 @@
  * Build: meson setup build-dc --cross-file sh4-dreamcast-kos -Dplatform=dreamcast
  */
 
+#include <dc/video.h>
+#include <kos.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
-
-#include <dc/video.h>
-#include <kos.h>
 
 #include "game.h"
 #include "input.h"
@@ -42,71 +41,71 @@
  * integrity project's sys_dreamcast.c); secbase keeps the values small.
  */
 static float sys_time(void) {
-    struct timeval tp;
-    static int secbase = 0;
+  struct timeval tp;
+  static int secbase = 0;
 
-    gettimeofday(&tp, NULL);
-    if (!secbase)
-        secbase = tp.tv_sec;
-    return (float)(tp.tv_sec - secbase) + (float)tp.tv_usec / 1000000.0f;
+  gettimeofday(&tp, NULL);
+  if (!secbase)
+    secbase = tp.tv_sec;
+  return (float)(tp.tv_sec - secbase) + (float)tp.tv_usec / 1000000.0f;
 }
 
 int main(int argc, char** argv) {
-    (void)argc;
-    (void)argv;
+  (void)argc;
+  (void)argv;
 
-    /* pvr_init requires a suitable 3D video mode to be active first. */
-    vid_set_mode(DM_640x480, PM_RGB565);
+  /* pvr_init requires a suitable 3D video mode to be active first. */
+  vid_set_mode(DM_640x480, PM_RGB565);
 
-    input_init();
-    input_dc_init();
+  input_init();
+  input_dc_init();
 
-    game_resize(SCREEN_W, SCREEN_H);
+  game_resize(SCREEN_W, SCREEN_H);
 
-    /* render_init initialises the PVR and installs the texture loader, so
-     * content built in game_init can request textures and have them uploaded
-     * to PVR VRAM immediately. */
-    render_init();
-    game_init();
+  /* render_init initialises the PVR and installs the texture loader, so
+   * content built in game_init can request textures and have them uploaded
+   * to PVR VRAM immediately. */
+  render_init();
+  game_init();
 
-    float last_time = sys_time();
-    float accumulator = 0.0f;
+  float last_time = sys_time();
+  float accumulator = 0.0f;
 
-    for (;;) {
-        float now = sys_time();
-        float frame_dt = now - last_time;
-        last_time = now;
+  for (;;) {
+    float now = sys_time();
+    float frame_dt = now - last_time;
+    last_time = now;
 
-        if (frame_dt > MAX_FRAME_DT)
-            frame_dt = MAX_FRAME_DT;
+    if (frame_dt > MAX_FRAME_DT)
+      frame_dt = MAX_FRAME_DT;
 
-        backend_input_poll();
+    backend_input_poll();
 
-        /* Quit goes through the input manager like everything else. */
-        if (input_held(ACT_QUIT))
-            break;
+    /* Quit goes through the input manager like everything else. */
+    if (input_held(ACT_QUIT))
+      break;
 
-        accumulator += frame_dt;
+    accumulator += frame_dt;
 
-        int ticks = 0;
-        while (accumulator >= TICK && ticks < MAX_TICKS) {
-            input_begin_frame();
+    int ticks = 0;
+    while (accumulator >= TICK && ticks < MAX_TICKS) {
+      input_begin_frame();
 
-            game_tick(TICK);
+      game_tick(TICK);
 
-            accumulator -= TICK;
-            ticks++;
-        }
-
-        if (ticks == MAX_TICKS)
-            accumulator = 0.0f; /* Drop the backlog rather than spiral. */
-
-        game_render(frame_dt);
-        render_present(SCREEN_W, SCREEN_H);
+      accumulator -= TICK;
+      ticks++;
     }
 
-    game_shutdown();
-    render_shutdown();
-    /* Returning from main exits to the KOS loader / boot menu. */
-    return 0;
+    if (ticks == MAX_TICKS)
+      accumulator = 0.0f; /* Drop the backlog rather than spiral. */
+
+    game_render(frame_dt);
+    render_present(SCREEN_W, SCREEN_H);
+  }
+
+  game_shutdown();
+  render_shutdown();
+  /* Returning from main exits to the KOS loader / boot menu. */
+  return 0;
 }

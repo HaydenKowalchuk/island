@@ -10,10 +10,10 @@
  * the name->handle map.
  */
 typedef struct {
-    pvr_ptr_t vram;   /* PVR VRAM pointer for pvr_poly_cxt_txr */
-    int w;
-    int h;
-    unsigned int fmt; /* PVR_TXRFMT_* */
+  pvr_ptr_t vram; /* PVR VRAM pointer for pvr_poly_cxt_txr */
+  int w;
+  int h;
+  unsigned int fmt; /* PVR_TXRFMT_* */
 } DcTexture;
 
 /* Installs the texture loader. Requires the PVR to be initialised. */

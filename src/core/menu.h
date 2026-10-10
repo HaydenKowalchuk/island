@@ -12,17 +12,17 @@
  */
 
 typedef enum {
-    MENU_SCREEN_INTRO,    /* title splash sequence (island1-zfn6) */
-    MENU_SCREEN_MAIN,     /* main menu over the attract backdrop */
-    MENU_SCREEN_CONTROLS, /* sub-screen: control bindings (island1-lb8c) */
-    MENU_SCREEN_CREDITS,  /* sub-screen: credits (island1-lb8c) */
-    MENU_SCREEN_PLAY      /* live gameplay */
+  MENU_SCREEN_INTRO,    /* title splash sequence (island1-zfn6) */
+  MENU_SCREEN_MAIN,     /* main menu over the attract backdrop */
+  MENU_SCREEN_CONTROLS, /* sub-screen: control bindings (island1-lb8c) */
+  MENU_SCREEN_CREDITS,  /* sub-screen: credits (island1-lb8c) */
+  MENU_SCREEN_PLAY      /* live gameplay */
 } MenuScreen;
 
-void menu_init(void);      /* boot state: starts on INTRO; called by game_init */
+void menu_init(void); /* boot state: starts on INTRO; called by game_init */
 MenuScreen menu_screen(void);
-void menu_tick(float dt);  /* input edges + intro timer + sub-screen nav */
-void menu_render(void);    /* front-end overlay UI (island1-zfn6/lb8c) */
+void menu_tick(float dt); /* input edges + intro timer + sub-screen nav */
+void menu_render(void);   /* front-end overlay UI (island1-zfn6/lb8c) */
 
 /* Test/dev reset: jump straight to a screen (gameplay tests enter PLAY). */
 void menu_set_screen(MenuScreen screen);
@@ -35,17 +35,16 @@ int menu_intro_card(void);
  * point over water) while looking at `look` (on the island). game_init wires
  * both from the world layout.
  */
-void menu_set_backdrop(float anchor_x, float anchor_z, float look_x,
-                       float look_z);
+void menu_set_backdrop(float anchor_x, float anchor_z, float look_x, float look_z);
 
 /* Attract camera: rebuild view/proj for this frame's framebuffer size. */
 void menu_cam_update(int width, int height);
-const float *menu_cam_view(void);
-const float *menu_cam_proj(void);
+const float* menu_cam_view(void);
+const float* menu_cam_proj(void);
 /* Attract camera eye (test/F3 use); valid after menu_cam_update. */
 void menu_cam_eye(float out[3]);
 /* Attract pose (eye/look/fov) for a camera handover (island1-38h3); the eye
  * is the last one menu_cam_update rendered. */
-void menu_cam_pose(float pos[3], float look[3], float *fov);
+void menu_cam_pose(float pos[3], float look[3], float* fov);
 
 #endif

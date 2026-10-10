@@ -59,8 +59,7 @@ static float s_mouse_dy;
 static double s_last_mouse_x;
 static double s_last_mouse_y;
 
-static void key_cb(GLFWwindow *win, int key, int scancode, int action,
-                   int mods) {
+static void key_cb(GLFWwindow* win, int key, int scancode, int action, int mods) {
   (void)win;
   (void)scancode;
   (void)mods;
@@ -86,7 +85,7 @@ static void key_cb(GLFWwindow *win, int key, int scancode, int action,
   }
 }
 
-static void mouse_button_cb(GLFWwindow *win, int button, int action, int mods) {
+static void mouse_button_cb(GLFWwindow* win, int button, int action, int mods) {
   (void)mods;
   if (button != GLFW_MOUSE_BUTTON_RIGHT)
     return;
@@ -103,7 +102,7 @@ static void mouse_button_cb(GLFWwindow *win, int button, int action, int mods) {
   }
 }
 
-static void cursor_cb(GLFWwindow *win, double x, double y) {
+static void cursor_cb(GLFWwindow* win, double x, double y) {
   (void)win;
 
   if (s_look_held) {
@@ -145,7 +144,7 @@ void backend_input_poll(void) {
   }
 }
 
-void input_glfw_init(GLFWwindow *window) {
+void input_glfw_init(GLFWwindow* window) {
   backend_input_init();
 
   glfwGetCursorPos(window, &s_last_mouse_x, &s_last_mouse_y);

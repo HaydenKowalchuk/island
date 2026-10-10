@@ -11,8 +11,8 @@
 #define TEXTURE_CACHE 64
 
 typedef struct {
-    char name[64];
-    TextureId id;
+  char name[64];
+  TextureId id;
 } Entry;
 
 static Entry s_cache[TEXTURE_CACHE];
@@ -20,27 +20,27 @@ static int s_cache_count = 0;
 static TextureLoader s_loader = NULL;
 
 void texture_set_loader(TextureLoader loader) {
-    s_loader = loader;
+  s_loader = loader;
 }
 
 TextureId texture_get(const char* name) {
-    if (!name || !*name || !s_loader)
-        return 0;
+  if (!name || !*name || !s_loader)
+    return 0;
 
-    for (int i = 0; i < s_cache_count; i++) {
-        if (strcmp(s_cache[i].name, name) == 0)
-            return s_cache[i].id;
-    }
+  for (int i = 0; i < s_cache_count; i++) {
+    if (strcmp(s_cache[i].name, name) == 0)
+      return s_cache[i].id;
+  }
 
-    TextureId id = s_loader(name);
-    if (id == 0)
-        return 0;
+  TextureId id = s_loader(name);
+  if (id == 0)
+    return 0;
 
-    if (s_cache_count < TEXTURE_CACHE) {
-        strncpy(s_cache[s_cache_count].name, name, sizeof(s_cache[0].name) - 1);
-        s_cache[s_cache_count].name[sizeof(s_cache[0].name) - 1] = '\0';
-        s_cache[s_cache_count].id = id;
-        s_cache_count++;
-    }
-    return id;
+  if (s_cache_count < TEXTURE_CACHE) {
+    strncpy(s_cache[s_cache_count].name, name, sizeof(s_cache[0].name) - 1);
+    s_cache[s_cache_count].name[sizeof(s_cache[0].name) - 1] = '\0';
+    s_cache[s_cache_count].id = id;
+    s_cache_count++;
+  }
+  return id;
 }

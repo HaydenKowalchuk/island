@@ -1,0 +1,14 @@
+﻿# yaml-language-server: $schema=https://json.schemastore.org/clang-format-21.x.json
+BasedOnStyle: Google
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowShortBlocksOnASingleLine: Always
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBraces: Attach
+ColumnLimit: 0
+IndentWidth: 2
+UseTab: Never

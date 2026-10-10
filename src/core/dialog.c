@@ -29,13 +29,13 @@
 
 /* ---- Conversation state ------------------------------------------------- */
 
-static const char *s_name = NULL;
+static const char* s_name = NULL;
 /* Line pointers are COPIED on dialog_start(): callers routinely pass a
  * stack-local array of pointers, so storing the array address would dangle
  * into a dead frame the moment the caller returns. The strings themselves
  * must still outlive the conversation (static tables are the intended use). */
-static const char *s_line_ptrs[DIALOG_MAX_LINES];
-static const char *const *s_lines = NULL;
+static const char* s_line_ptrs[DIALOG_MAX_LINES];
+static const char* const* s_lines = NULL;
 static int s_line_count = 0;
 static int s_line = 0;
 static float s_char_time = 0.0f;
@@ -44,8 +44,7 @@ static int s_page = 0;          /* visible page of the wrapped line */
 
 /* ---- Shared layout (draw + E rule must agree on scale/page rows) -------- */
 
-static int wrap_line(const char *line, int max_chars, int max_rows,
-                     int *row_starts, int *row_lens);
+static int wrap_line(const char* line, int max_chars, int max_rows, int* row_starts, int* row_lens);
 
 typedef struct {
   int bx, by, bw, bh;
@@ -56,14 +55,13 @@ typedef struct {
   int fit_rows;  /* body rows visible in the box */
 } DialogLayout;
 
-static void dialog_layout(DialogLayout *L, int vw, int vh, const char *name,
-                          const char *worst);
+static void dialog_layout(DialogLayout* L, int vw, int vh, const char* name, const char* worst);
 
 /* Longest line of the active conversation (stable scale across lines), or
  * `line` when drawn standalone. */
-static const char *dialog_worst_line(const char *line) {
+static const char* dialog_worst_line(const char* line) {
   if (s_lines) {
-    const char *worst = s_lines[0];
+    const char* worst = s_lines[0];
     for (int i = 1; i < s_line_count; i++)
       if (strlen(s_lines[i]) > strlen(worst))
         worst = s_lines[i];
@@ -73,7 +71,7 @@ static const char *dialog_worst_line(const char *line) {
 }
 
 /* Wrapped row count of `line` at `max_chars` (capped at DIALOG_WRAP_ROWS). */
-static int dialog_row_count(const char *line, int max_chars) {
+static int dialog_row_count(const char* line, int max_chars) {
   int starts[DIALOG_WRAP_ROWS], lens[DIALOG_WRAP_ROWS];
   return wrap_line(line, max_chars, DIALOG_WRAP_ROWS, starts, lens);
 }
@@ -86,7 +84,7 @@ static int dialog_visible_chars(void) {
   return (vis < len) ? vis : len;
 }
 
-void dialog_start(const char *name, const char *const *lines, int line_count) {
+void dialog_start(const char* name, const char* const* lines, int line_count) {
   if (!lines || line_count <= 0)
     return;
   if (line_count > DIALOG_MAX_LINES)
@@ -102,7 +100,9 @@ void dialog_start(const char *name, const char *const *lines, int line_count) {
   s_consume_press = 1;
 }
 
-int dialog_active(void) { return s_lines != NULL; }
+int dialog_active(void) {
+  return s_lines != NULL;
+}
 
 int dialog_line_complete(void) {
   if (!s_lines)
@@ -110,7 +110,9 @@ int dialog_line_complete(void) {
   return dialog_visible_chars() >= (int)strlen(s_lines[s_line]);
 }
 
-void dialog_close(void) { s_lines = NULL; }
+void dialog_close(void) {
+  s_lines = NULL;
+}
 
 void dialog_update(float dt, int advance_pressed) {
   if (!s_lines)
@@ -132,11 +134,10 @@ void dialog_update(float dt, int advance_pressed) {
     s_char_time = (float)strlen(s_lines[s_line]) * DIALOG_CHAR_PERIOD;
     return;
   }
-  const RenderFrame *fr = r_frame();
+  const RenderFrame* fr = r_frame();
   if (fr->width > 0 && fr->height > 0) {
     DialogLayout L;
-    dialog_layout(&L, fr->width, fr->height, s_name,
-                  dialog_worst_line(s_lines[s_line]));
+    dialog_layout(&L, fr->width, fr->height, s_name, dialog_worst_line(s_lines[s_line]));
     int total = dialog_row_count(s_lines[s_line], L.max_chars);
     if (L.fit_rows >= 1 && s_page + L.fit_rows < total) {
       s_page += L.fit_rows;
@@ -152,7 +153,7 @@ void dialog_update(float dt, int advance_pressed) {
 
 /* ---- Textbox geometry ---------------------------------------------------- */
 
-static void dialog_box(int vw, int vh, int *x, int *y, int *w, int *h) {
+static void dialog_box(int vw, int vh, int* x, int* y, int* w, int* h) {
   *w = (int)((float)vw * DIALOG_BOX_W_FRAC);
   *h = (int)((float)vh * DIALOG_BOX_H_FRAC);
   *x = (vw - *w) / 2;
@@ -160,10 +161,8 @@ static void dialog_box(int vw, int vh, int *x, int *y, int *w, int *h) {
 }
 
 /* Normalised [0,1] quad (origin bottom-left) from top-left pixel coords. */
-static void rect_px(int vw, int vh, int x, int y, int w, int h,
-                    const float color[4]) {
-  r_rect_2d((float)x / (float)vw, 1.0f - (float)(y + h) / (float)vh,
-            (float)w / (float)vw, (float)h / (float)vh, color);
+static void rect_px(int vw, int vh, int x, int y, int w, int h, const float color[4]) {
+  r_rect_2d((float)x / (float)vw, 1.0f - (float)(y + h) / (float)vh, (float)w / (float)vw, (float)h / (float)vh, color);
 }
 
 /*
@@ -173,8 +172,7 @@ static void rect_px(int vw, int vh, int x, int y, int w, int h,
  * row so character indices stay identical to the original string; the reveal
  * count indexes into `line` seamlessly across rows.
  */
-static int wrap_line(const char *line, int max_chars, int max_rows,
-                     int *row_starts, int *row_lens) {
+static int wrap_line(const char* line, int max_chars, int max_rows, int* row_starts, int* row_lens) {
   int len = (int)strlen(line);
   int rows = 0, i = 0;
 
@@ -210,8 +208,7 @@ static int wrap_line(const char *line, int max_chars, int max_rows,
  * with whatever rows fit - paging covers the remainder, so nothing is ever
  * clipped in silence.
  */
-static void dialog_layout(DialogLayout *L, int vw, int vh, const char *name,
-                          const char *worst) {
+static void dialog_layout(DialogLayout* L, int vw, int vh, const char* name, const char* worst) {
   dialog_box(vw, vh, &L->bx, &L->by, &L->bw, &L->bh);
   int inner_w = L->bw - 2 * DIALOG_PAD_PX;
   const float scales[2] = {DIALOG_SCALE_2X, DIALOG_SCALE_1X};
@@ -250,8 +247,7 @@ static void dialog_layout(DialogLayout *L, int vw, int vh, const char *name,
 }
 
 /* Blinking down triangle (no font glyph): 4 stacked strips, widest on top. */
-static void tri_down(int vw, int vh, int cx, int top, int w, int h,
-                     const float color[4]) {
+static void tri_down(int vw, int vh, int cx, int top, int w, int h, const float color[4]) {
   int row_h = h / 4;
   if (row_h < 1)
     row_h = 1;
@@ -263,12 +259,11 @@ static void tri_down(int vw, int vh, int cx, int top, int w, int h,
   }
 }
 
-void hud_dialog_draw(const char *name, const char *line, float type_progress,
-                     int page) {
+void hud_dialog_draw(const char* name, const char* line, float type_progress, int page) {
   r_pass(R_PASS_HUD); /* the box is definitionally HUD; also survives callers
                          that forgot to set the pass */
 
-  const RenderFrame *fr = r_frame();
+  const RenderFrame* fr = r_frame();
   int vw = fr->width, vh = fr->height;
   if (vw <= 0 || vh <= 0 || !line)
     return;
@@ -282,11 +277,9 @@ void hud_dialog_draw(const char *name, const char *line, float type_progress,
   /* Fill, then a 2px white frame as four edge strips. */
   rect_px(vw, vh, L.bx, L.by, L.bw, L.bh, black);
   rect_px(vw, vh, L.bx, L.by, L.bw, DIALOG_BORDER_PX, white);
-  rect_px(vw, vh, L.bx, L.by + L.bh - DIALOG_BORDER_PX, L.bw, DIALOG_BORDER_PX,
-          white);
+  rect_px(vw, vh, L.bx, L.by + L.bh - DIALOG_BORDER_PX, L.bw, DIALOG_BORDER_PX, white);
   rect_px(vw, vh, L.bx, L.by, DIALOG_BORDER_PX, L.bh, white);
-  rect_px(vw, vh, L.bx + L.bw - DIALOG_BORDER_PX, L.by, DIALOG_BORDER_PX, L.bh,
-          white);
+  rect_px(vw, vh, L.bx + L.bw - DIALOG_BORDER_PX, L.by, DIALOG_BORDER_PX, L.bh, white);
 
   int text_x = L.bx + DIALOG_PAD_PX;
   int text_y = L.by + DIALOG_PAD_PX;
@@ -337,16 +330,14 @@ void dialog_draw(void) {
   if (!s_lines)
     return;
 
-  hud_dialog_draw(s_name, s_lines[s_line], (float)dialog_visible_chars(),
-                  s_page);
+  hud_dialog_draw(s_name, s_lines[s_line], (float)dialog_visible_chars(), s_page);
 
-  const RenderFrame *fr = r_frame();
+  const RenderFrame* fr = r_frame();
   if (fr->width <= 0 || fr->height <= 0)
     return;
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
   DialogLayout L;
-  dialog_layout(&L, fr->width, fr->height, s_name,
-                dialog_worst_line(s_lines[s_line]));
+  dialog_layout(&L, fr->width, fr->height, s_name, dialog_worst_line(s_lines[s_line]));
   int total = dialog_row_count(s_lines[s_line], L.max_chars);
   int more = L.fit_rows >= 1 && s_page + L.fit_rows < total;
   int phase = (int)(s_char_time * 2.0f); /* 2 Hz blink */
@@ -354,28 +345,23 @@ void dialog_draw(void) {
 
   /* Down triangle left of the E hint while rows remain below this page. */
   if (more && blink)
-    tri_down(fr->width, fr->height,
-             L.bx + L.bw - DIALOG_PAD_PX - (int)(L.scale * 14.0f),
-             L.by + L.bh - DIALOG_PAD_PX - (int)(L.scale * 8.0f),
-             (int)(L.scale * 8.0f), (int)(L.scale * 6.0f), white);
+    tri_down(fr->width, fr->height, L.bx + L.bw - DIALOG_PAD_PX - (int)(L.scale * 14.0f), L.by + L.bh - DIALOG_PAD_PX - (int)(L.scale * 8.0f), (int)(L.scale * 8.0f), (int)(L.scale * 6.0f), white);
 
   /* Blinking E hint at the bottom-right once the line is fully revealed. */
   if (!dialog_line_complete() || !blink)
     return;
   int e = (int)(DIALOG_GLYPH * L.scale);
-  r_text_2d(L.bx + L.bw - DIALOG_PAD_PX - e, L.by + L.bh - DIALOG_PAD_PX - e,
-            L.scale, "E", white);
+  r_text_2d(L.bx + L.bw - DIALOG_PAD_PX - e, L.by + L.bh - DIALOG_PAD_PX - e, L.scale, "E", white);
 }
 
 int dialog_page(void) {
   if (!s_lines || s_page <= 0)
     return 0;
-  const RenderFrame *fr = r_frame();
+  const RenderFrame* fr = r_frame();
   if (fr->width <= 0 || fr->height <= 0)
     return 0;
   DialogLayout L;
-  dialog_layout(&L, fr->width, fr->height, s_name,
-                dialog_worst_line(s_lines[s_line]));
+  dialog_layout(&L, fr->width, fr->height, s_name, dialog_worst_line(s_lines[s_line]));
   if (L.fit_rows < 1)
     return 0;
   return s_page / L.fit_rows; /* s_page is a row offset; expose the index */
@@ -384,12 +370,11 @@ int dialog_page(void) {
 int dialog_page_count(void) {
   if (!s_lines || !dialog_line_complete())
     return 1; /* paging only exists once a line is fully revealed */
-  const RenderFrame *fr = r_frame();
+  const RenderFrame* fr = r_frame();
   if (fr->width <= 0 || fr->height <= 0)
     return 1;
   DialogLayout L;
-  dialog_layout(&L, fr->width, fr->height, s_name,
-                dialog_worst_line(s_lines[s_line]));
+  dialog_layout(&L, fr->width, fr->height, s_name, dialog_worst_line(s_lines[s_line]));
   int total = dialog_row_count(s_lines[s_line], L.max_chars);
   if (L.fit_rows < 1 || total <= L.fit_rows)
     return 1;

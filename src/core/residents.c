@@ -1,6 +1,6 @@
-#include <stddef.h>
-
 #include "residents.h"
+
+#include <stddef.h>
 
 /*
  * The island cast (island1-9fm3). Five voices, each with a thread of the
@@ -110,10 +110,12 @@ static const Dialogue s_keeper = {
     {NULL},
 };
 
-const Dialogue *resident_dialogue(int i) {
-    if (i < 0 || i >= RESIDENT_COUNT)
-        i = 0;
-    return &s_residents[i];
+const Dialogue* resident_dialogue(int i) {
+  if (i < 0 || i >= RESIDENT_COUNT)
+    i = 0;
+  return &s_residents[i];
 }
 
-const Dialogue *depot_dialogue(void) { return &s_keeper; }
+const Dialogue* depot_dialogue(void) {
+  return &s_keeper;
+}

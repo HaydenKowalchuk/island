@@ -8,20 +8,21 @@
  *     and the E after the last line closes the box
  *   - the E press that opened the conversation is consumed (no instant skip)
  */
+#include "dialog.h"
+
 #include <stdio.h>
 #include <string.h>
 
-#include "dialog.h"
 #include "render.h"
 
 static int failures = 0;
 
-#define CHECK(cond, msg)                                                       \
-  do {                                                                         \
-    if (!(cond)) {                                                             \
-      printf("FAIL: %s\n", msg);                                               \
-      failures++;                                                              \
-    }                                                                          \
+#define CHECK(cond, msg)         \
+  do {                           \
+    if (!(cond)) {               \
+      printf("FAIL: %s\n", msg); \
+      failures++;                \
+    }                            \
   } while (0)
 
 int main(void) {
@@ -36,7 +37,7 @@ int main(void) {
   CHECK(fr->stat_verts > 0, "dialog records vertices");
 
   /* 2. Typewriter timing: 30 ms per character. */
-  static const char* const lines[] = { "HEY", "BYE" };
+  static const char* const lines[] = {"HEY", "BYE"};
   r_frame_begin(); /* reset the recorder between sections */
   dialog_start("TESTER", lines, 2);
   CHECK(dialog_active(), "conversation opens");
@@ -85,7 +86,7 @@ int main(void) {
   r_frame_begin();
   {
     /* Open from a nested frame that dies before the box is touched. */
-    const char* stack_lines[2] = { "STACK LINE A", "STACK LINE B" };
+    const char* stack_lines[2] = {"STACK LINE A", "STACK LINE B"};
     dialog_start("STACKER", stack_lines, 2);
   }
   {
