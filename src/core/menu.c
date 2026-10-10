@@ -49,8 +49,8 @@ static mat4 s_view;
 static mat4 s_proj;
 
 void menu_init(void) {
-  // s_screen = MENU_SCREEN_INTRO;
-  s_screen = MENU_SCREEN_PLAY;
+  s_screen = MENU_SCREEN_INTRO;
+  // s_screen = MENU_SCREEN_PLAY;
   s_card = 0;
   s_card_timer = 0.0f;
   s_menu_time = 0.0f;

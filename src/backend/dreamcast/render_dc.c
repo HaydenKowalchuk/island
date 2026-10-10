@@ -69,8 +69,11 @@ void render_init(void) {
    * pvr_init_defaults() leaves the punch-through bins at zero (disabled), and
    * pvr_list_begin() on a disabled list stalls the PVR — the freeze on boot.
    * Bins and vertex buffers come out of the texture memory pool, so only
-   * allocate what is needed. Translucent autosort stays on (the PVR sorts
-   * translucent draws by depth, so no painter's sorting from us).
+   * allocate what is needed. Translucent autosort is DISABLED: gldc's
+   * apply_poly_header only trusts a TR poly's depth mode under autosort when it
+   * is GEQUAL, and Diddy-Kong-Racing runs autosort off so TR draws come out in
+   * submission order (the wake is one ribbon — no sorting needed, and it keeps
+   * our TR depth=ALWAYS from being mis-sorted/dropped).
    */
   static const pvr_init_params_t pvr_params = {
       .opb_sizes =
@@ -82,11 +85,25 @@ void render_init(void) {
               PVR_BINSIZE_32,
           },
       .vertex_buf_size = 512 * 1024,
-      .autosort_disabled = 0,
+      .autosort_disabled = 1,
       .opb_overflow_count = 3,
       .vbuf_doublebuf_disabled = 0,
   };
   pvr_init(&pvr_params);
+
+  /*
+   * Punch-through alpha threshold: a pixel whose alpha is <= this is discarded
+   * before it ever reaches the screen. KOS neither names nor writes this
+   * register, so it keeps the boot ROM's power-on value — which reads back as
+   * 0xFF, i.e. discard EVERYTHING (alpha can never exceed 255). That is why no
+   * HUD/intro text appeared on the PT list. 0x80 is the middle (the N64/RDP's
+   * ref = 0.5) that ssb64-dc, oot-dc and Diddy-Kong-Racing all set. Written
+   * after pvr_init so init can't clobber it.
+   */
+#define PVR_PT_ALPHA_REF 0xA05F811C
+  *(volatile unsigned int*)PVR_PT_ALPHA_REF = 0x80;
+  printf("dc PT_ALPHA_REF=0x%08x (want 0x80)\n",
+         *(volatile unsigned int*)PVR_PT_ALPHA_REF);
 
   /* Installs the texture loader. main_dc calls render_init before
    * game_init (mirroring the desktop backend), so content can request
@@ -302,13 +319,17 @@ static int dc_emit_tri(const float* m, int screen_space, int fog, float z2d, con
  * (island1-m4g4). The recorder says what each draw *is*; this is where that
  * intent becomes a native list.
  *
- * On the PVR the lists render in fixed order (opaque, translucent,
- * punch-through) and the TA sorts within each list, so the recorder's draw
- * order only picks the list — no painter's sorting is needed from us.
+ * On the PVR the lists render in a fixed order — opaque, then punch-through,
+ * then translucent (confirmed by gldc's SceneListSubmit and Diddy-Kong-Racing's
+ * gfx.c) — and the TA sorts within each list, so the recorder's draw order only
+ * picks the list; no painter's sorting is needed from us.
  *
- * OVERLAY has no PVR list of its own, so it shares PT with CUTOUT: PT renders
- * after translucent, which is exactly what "over everything" needs, and it
- * sorts like opaque so the HUD's flat quads keep their submission order.
+ * OVERLAY has no PVR list of its own, so it shares PT with CUTOUT: that puts it
+ * after the opaque world (so text/HUD paints over geometry) and it sorts like
+ * opaque so the HUD's flat quads keep their submission order. Note translucent
+ * renders LAST, after PT — so a TR effect (the wake) that overlaps the HUD will
+ * draw over it; harmless today since the wake lives in the 3D view and the HUD
+ * sits in the corners, but revisit if overlays must stay on top of translucent.
  */
 static pvr_list_t dc_list_of(const RDraw* d) {
   switch (d->composite) {
@@ -359,6 +380,18 @@ static void dc_submit_draw(const RenderFrame* frame, const RDraw* d, pvr_list_t 
   cxt.depth.write =
       d->depth_write ? PVR_DEPTHWRITE_ENABLE : PVR_DEPTHWRITE_DISABLE;
   cxt.gen.fog_type = PVR_FOG_DISABLE; /* fog is baked into the colours */
+
+  if (d->composite == R_COMPOSITE_OVERLAY) {
+    /*
+     * Overlays (HUD/text) ignore scene depth entirely: paint unconditionally.
+     * On the intro frame there is no opaque pass, so the Z buffer still holds
+     * its clear value; a GREATER test against it drops the text (and gldc
+     * forces punch-through to a fixed depth mode for exactly this reason).
+     * ALWAYS passes against any clear, so the overlay always lands on top.
+     */
+    cxt.depth.comparison = PVR_DEPTHCMP_ALWAYS;
+    cxt.depth.write = PVR_DEPTHWRITE_DISABLE;
+  }
 
   if (list == PVR_LIST_TR_POLY) {
     /* Blend is per-header and opt-in on the PVR (KOS defaults DISABLE). */

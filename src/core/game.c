@@ -1623,9 +1623,9 @@ void game_render(float frame_dt) {
     s_cam_pos[2] = s_cam.pos[2];
   }
 
-  // emit_sky();
-  // emit_ocean(s_time);
-  // terrain_emit(s_cam_pos);
+  emit_sky();
+  emit_ocean(s_time);
+  terrain_emit(s_cam_pos);
   emit_wake(s_time);
   emit_depot(s_time);
   emit_houses(s_time);
