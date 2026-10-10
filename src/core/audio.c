@@ -21,6 +21,7 @@ struct AudioVoice {
   AudioSfx id;
   int voice; /* backend voice id */
   unsigned flags;
+  unsigned seq; /* allocation age, for LRU steal when the pool is full */
   float volume, pan, pitch;
 };
 
@@ -44,6 +45,7 @@ static const char* const k_music_path[AUDIO_MUSIC_COUNT] = {
 };
 
 static AudioVoice s_voices[AUDIO_MAX_VOICES];
+static unsigned s_voice_seq;
 static int s_inited = 0;
 
 static float s_master = 1.0f;
@@ -95,21 +97,45 @@ void audio_calc_positional(const float listener_pos[3], float listener_yaw, cons
 
 /* ---- Node pool -------------------------------------------------------- */
 
+static void voice_claim(AudioVoice* v, AudioSfx id, unsigned extra_flags) {
+  v->id = id;
+  v->flags = AV_ACTIVE | extra_flags;
+  v->volume = 1.0f;
+  v->pan = 0.0f;
+  v->pitch = 1.0f;
+  v->seq = ++s_voice_seq;
+}
+
 static AudioVoice* voice_alloc(AudioSfx id, unsigned extra_flags) {
+  /* Pass 1: a truly free slot, so concurrent one-shots each get their own
+   * voice instead of collapsing onto one (the old code reused any non-reserved
+   * slot, orphaning the previous backend handle mid-play). */
   for (int i = 0; i < AUDIO_MAX_VOICES; i++) {
     AudioVoice* v = &s_voices[i];
-    /* Reclaim free slots and finished one-shots; never steal a live reserved
-     * loop (wipeout's SFX_RESERVE rule). */
-    if ((v->flags & AV_ACTIVE) && (v->flags & AV_RESERVE))
-      continue;
-    v->id = id;
-    v->flags = AV_ACTIVE | extra_flags;
-    v->volume = 1.0f;
-    v->pan = 0.0f;
-    v->pitch = 1.0f;
-    return v;
+    if (!(v->flags & AV_ACTIVE)) {
+      voice_claim(v, id, extra_flags);
+      return v;
+    }
   }
-  return NULL;
+  /* Pass 2: pool full. Steal the oldest non-reserved one-shot (LRU by seq);
+   * never take a live reserved loop (wipeout's SFX_RESERVE rule). Stop the
+   * stolen backend voice so the orphaned sound does not keep playing. */
+  AudioVoice* steal = NULL;
+  unsigned oldest = 0xFFFFFFFFu;
+  for (int i = 0; i < AUDIO_MAX_VOICES; i++) {
+    AudioVoice* v = &s_voices[i];
+    if (v->flags & AV_RESERVE)
+      continue;
+    if (v->seq < oldest) {
+      oldest = v->seq;
+      steal = v;
+    }
+  }
+  if (!steal)
+    return NULL; /* only reserved loops remain */
+  backend_audio_voice_stop(steal->voice, 0);
+  voice_claim(steal, id, extra_flags);
+  return steal;
 }
 
 static void voice_apply(AudioVoice* v) {

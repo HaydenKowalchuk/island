@@ -1,7 +1,9 @@
 #include <malloc.h>
 #include <pspaudio.h>
 #include <pspiofilemgr.h>
+#include <pspmp3.h>
 #include <pspthreadman.h>
+#include <psputility.h>
 #include <psputils.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,28 +13,26 @@
 #include "psp_assets.h"
 
 /*
- * PSP audio backend (island1-26pd): native sceAudio, no miniaudio. Ports the
- * proven Phoenix Game Engine mixer pattern (.scratch/PGE/pgeWav.c).
+ * PSP audio backend (island1-26pd / island1-ym91): native sceAudio mixer +
+ * sceMp3 music streaming, no miniaudio. Ports the proven Phoenix Game Engine
+ * mixer pattern (.scratch/PGE/pgeWav.c) and the SDK mp3 sample's decode loop.
  *
  *  - One hardware channel via sceAudioChReserve(-1, 1024 frames, stereo) at
  *    44.1kHz. A dedicated mixer thread (prio 0x12, 64KiB stack, PGE's
  *    numbers) fills a 64-byte-aligned double buffer with a software mix,
  *    then blocks in sceAudioOutputPannedBlocking -- the hardware consume
  *    paces the thread, so the output path needs no semaphores.
- *  - EVERYTHING IS RESIDENT. UMD storage is far too slow to touch from the
- *    mixer thread: streaming music from disc caused both dropouts (refill
- *    could not keep up with the 1024-frame period) and frame hitches (a
- *    high-priority thread blocking on sceIoRead starved the game loop).
- *    SFX and music are both fully loaded into RAM (PSP has 64MB; our tracks
- *    are ~1.4MB each). The mixer thread never does file IO.
  *  - SFX: resident WAV (16/8-bit mono), 32 software voices (matching core's
  *    AUDIO_MAX_VOICES). Per-voice 16.16 fixed-point resample + linear
  *    interp + Q15 L/R gains, all integer math. Reserved loops (engine hum)
- *    never stolen by one-shots.
- *  - Music: resident WAV (16-bit stereo 44.1kHz), one track at a time, loop
- *    wrap in the mixer. Loaded on first play and cached per path (a one-time
- *    UMD read on the game thread during a transition), so switching between
- *    the 2 tracks is a pointer swap after the first play of each.
+ *    never stolen by one-shots. Fully in RAM (tens of KB each) -- cheap.
+ *  - MUSIC: streamed 128kbps MP3 via sceMp3, decoded on the Media Engine
+ *    (near-zero Allegrex cost). A 1-minute track is ~1MB, not ~10MB as WAV.
+ *    A dedicated music thread (lower prio than the mixer) owns the sceMp3
+ *    handle: it feeds the compressed stream from disc (~16KB/s -- trivial for
+ *    UMD) and copies decoded stereo 44.1kHz PCM into a ring buffer. The mixer
+ *    only pops PCM from the ring; it never does IO or sceMp3 calls, so the
+ *    UMD-stall-that-starved-the-frame-loop bug cannot recur.
  *
  * Same architecture as audio_dc.c (wipeout-dc port) on Dreamcast: console
  * backends talk to the platform directly; only desktop keeps miniaudio.
@@ -44,7 +44,14 @@
 #define PSP_VOICES 32
 #define PSP_PATH_MAX 512
 #define PSP_Q15 32768
-#define PSP_MUSIC_CACHE 4
+
+/* Music ring buffer: power-of-two stereo frames (~0.74s @44.1k) sized to
+ * absorb UMD latency spikes so the mixer never underruns. */
+#define PSP_RING_FRAMES 32768
+#define PSP_RING_MASK (PSP_RING_FRAMES - 1)
+#define PSP_MUSIC_PRIO 0x1A /* below mixer 0x12: mixing preempts decode/IO */
+#define MP3_STREAM_BUF (32 * 1024)   /* compressed ring in sceMp3 (>=8192) */
+#define MP3_PCM_BUF (8 * 1152 * 2 * 2) /* decode scratch: several MP3 frames */
 
 /* ---- WAV parsing ------------------------------------------------------- */
 
@@ -178,34 +185,41 @@ static uint32_t s_sfx_frames[AUDIO_SFX_COUNT];
 static uint32_t s_sfx_rate[AUDIO_SFX_COUNT];
 static uint32_t s_seq;
 
-/* Music: resident track cache + the one currently playing. The game thread
- * loads/switches; the mixer thread only ever reads s_mus (pointer swap). */
+/* Music: streamed MP3 via sceMp3, decoded on a dedicated thread into a PCM
+ * ring the mixer pops from. The game thread only posts play/stop requests;
+ * the music thread owns the sceMp3 handle and does all disc IO. */
+typedef struct {
+  volatile int active;    /* ring has a live track (mixer reads) */
+  volatile uint32_t head; /* write index (frames), music thread */
+  volatile uint32_t tail; /* read index (frames), mixer thread */
+} MusicRing;
+
 typedef struct {
   char path[PSP_PATH_MAX];
-  int16_t* data; /* stereo interleaved */
-  uint32_t frames;
-} MusicCache;
-
-typedef struct {
-  volatile const int16_t* data;
-  volatile uint32_t frames;
-  volatile uint32_t pos; /* stereo frame index */
-  volatile int active;
   volatile int loop;
-} MusicVoice;
+  volatile int req; /* 0 none, 1 play(path staged), 2 stop */
+} MusicCmd;
 
-static MusicCache s_mus_cache[PSP_MUSIC_CACHE];
-static MusicVoice s_mus;
+static int16_t* s_ring; /* PSP_RING_FRAMES stereo frames, 64-aligned */
+static MusicRing s_mus;
+static MusicCmd s_cmd;
 static volatile int s_mus_paused;
 static volatile int s_mus_gain_q15 = PSP_Q15;
-static volatile int s_mus_req; /* 0 none, 1 play, 2 stop */
-static volatile int s_mus_req_loop;
 
 static int s_ch = -1;
 static SceUID s_mix_th = -1;
+static SceUID s_mus_th = -1;
 static volatile int s_quit;
 static void* s_pcm_raw;
 static int16_t* s_pcm;
+
+/* sceMp3 handle + its buffers (music thread only after init). */
+static int s_mp3 = -1;
+static int s_mp3_fd = -1;
+static int s_mp3_loop;         /* current track loops */
+static unsigned char* s_mp3_in;  /* MP3_STREAM_BUF, 64-aligned */
+static unsigned char* s_mp3_pcm; /* MP3_PCM_BUF, 64-aligned */
+static int s_mp3_ch = 2;         /* channels of the current track */
 
 static uint32_t voice_step(uint32_t rate, float pitch) {
   if (pitch <= 0.0f)
@@ -294,20 +308,6 @@ static int mix_thread(SceSize args, void* argp) {
   int16_t* out = s_pcm;
 
   while (!s_quit) {
-    /* Apply a pending music pointer swap (cheap; no IO). */
-    int req = s_mus_req;
-    if (req) {
-      s_mus_req = 0;
-      if (req == 2) {
-        s_mus.active = 0;
-        s_mus.data = NULL;
-        s_mus.frames = 0;
-        s_mus.pos = 0;
-      }
-      /* req == 1: the game thread already loaded the track into the cache
-       * and staged s_mus.data/frames/loop; we just turn it on at pos 0. */
-    }
-
     for (int i = 0; i < PSP_PERIOD_FRAMES; i++) {
       int32_t l = 0, r = 0;
       for (int vi = 0; vi < PSP_VOICES; vi++) {
@@ -340,24 +340,17 @@ static int mix_thread(SceSize args, void* argp) {
         r += (s * v->gain_r) >> 15;
         v->pos_fx = pos + v->step_fx;
       }
+      /* Music: pop one stereo frame from the ring the sceMp3 thread fills.
+       * Single-producer (music thread writes head) / single-consumer (this
+       * thread writes tail); safe under preemption because each side owns its
+       * own index. Underrun just yields silence for this sample. */
       if (s_mus.active && !s_mus_paused) {
-        const volatile int16_t* md = s_mus.data;
-        uint32_t mf = s_mus.frames;
-        uint32_t mpos = s_mus.pos;
-        if (md && mf) {
-          const volatile int16_t* f = md + ((uint64_t)mpos << 1);
+        uint32_t tail = s_mus.tail;
+        if (tail != s_mus.head) {
+          const int16_t* f = &s_ring[(tail & PSP_RING_MASK) << 1];
           l += (f[0] * s_mus_gain_q15) >> 15;
           r += (f[1] * s_mus_gain_q15) >> 15;
-          mpos++;
-          if (mpos >= mf) {
-            if (s_mus.loop) {
-              mpos = 0;
-            } else {
-              s_mus.active = 0;
-              mpos = 0;
-            }
-          }
-          s_mus.pos = mpos;
+          s_mus.tail = tail + 1;
         }
       }
       if (l > 32767)
@@ -381,17 +374,203 @@ static int mix_thread(SceSize args, void* argp) {
   return 0;
 }
 
+/* ---- Music: sceMp3 streaming (island1-ym91) ---------------------------- */
+
+/* Feed sceMp3's compressed ring from disc. srcpos from the library is the
+ * absolute file offset to read next. Returns bytes read, <=0 on EOF/fault. */
+static int mp3_fill(void) {
+  unsigned char* dst;
+  SceInt32 towrite, srcpos;
+  if (s_mp3 < 0)
+    return -1;
+  if (sceMp3GetInfoToAddStreamData(s_mp3, &dst, &towrite, &srcpos) < 0)
+    return -1;
+  if (towrite <= 0)
+    return 0;
+  if (sceIoLseek32(s_mp3_fd, (int)srcpos, PSP_SEEK_SET) < 0)
+    return -1;
+  int n = (int)sceIoRead(s_mp3_fd, dst, (SceSize)towrite);
+  if (n <= 0)
+    return -1;
+  if (sceMp3NotifyAddStreamData(s_mp3, n) < 0)
+    return -1;
+  return n;
+}
+
+static void mp3_teardown(void) {
+  if (s_mp3 >= 0) {
+    sceMp3ReleaseMp3Handle(s_mp3);
+    s_mp3 = -1;
+  }
+  if (s_mp3_fd >= 0) {
+    sceIoClose(s_mp3_fd);
+    s_mp3_fd = -1;
+  }
+  s_mus.active = 0;
+  __sync_synchronize();
+  s_mus.head = 0;
+  s_mus.tail = 0;
+}
+
+/* Write decoded PCM into the ring, blocking (yielding) while it is full.
+ * Mono is up-mixed to stereo so the mixer always pops interleaved stereo. */
+static void ring_write(const int16_t* src, uint32_t frames, int ch) {
+  while (!s_quit) {
+    uint32_t head = s_mus.head;
+    uint32_t free_frames = PSP_RING_FRAMES - (head - s_mus.tail);
+    if (free_frames > 0) {
+      uint32_t n = frames < free_frames ? frames : free_frames;
+      uint32_t widx = head & PSP_RING_MASK;
+      uint32_t first = PSP_RING_FRAMES - widx;
+      if (first > n)
+        first = n;
+      int16_t* dst = &s_ring[widx << 1];
+      if (ch == 2) {
+        memcpy(dst, src, (size_t)first * 4);
+        if (n > first)
+          memcpy(&s_ring[0], src + first * 2, (size_t)(n - first) * 4);
+      } else {
+        for (uint32_t k = 0; k < first; k++)
+          dst[k * 2] = dst[k * 2 + 1] = src[k];
+        if (n > first) {
+          int16_t* d0 = &s_ring[0];
+          for (uint32_t k = 0; k < n - first; k++)
+            d0[k * 2] = d0[k * 2 + 1] = src[first + k];
+        }
+      }
+      __sync_synchronize();
+      s_mus.head = head + n; /* publish after data is written */
+      src += (size_t)n * (size_t)ch;
+      frames -= n;
+      if (frames == 0)
+        return;
+    }
+    sceKernelDelayThread(1000); /* ring full: let the mixer drain */
+  }
+}
+
+/* Dedicated music thread: owns the sceMp3 handle, does all disc IO and
+ * decode, streams PCM into the ring. Lower priority than the mixer (0x1A vs
+ * 0x12) so mixing preempts it, and the game loop is never starved. */
+static int music_thread(SceSize args, void* argp) {
+  (void)args;
+  (void)argp;
+
+  while (!s_quit) {
+    int req = s_cmd.req;
+    if (req == 1) {
+      mp3_teardown();
+      s_mp3_fd = sceIoOpen(s_cmd.path, PSP_O_RDONLY, 0);
+      if (s_mp3_fd >= 0) {
+        int size = (int)sceIoLseek32(s_mp3_fd, 0, PSP_SEEK_END);
+        sceIoLseek32(s_mp3_fd, 0, PSP_SEEK_SET);
+        SceMp3InitArg arg;
+        memset(&arg, 0, sizeof(arg));
+        arg.mp3StreamStart = 0;
+        arg.mp3StreamEnd = (unsigned int)size;
+        arg.mp3Buf = s_mp3_in;
+        arg.mp3BufSize = MP3_STREAM_BUF;
+        arg.pcmBuf = s_mp3_pcm;
+        arg.pcmBufSize = MP3_PCM_BUF;
+        s_mp3 = sceMp3ReserveMp3Handle(&arg);
+        if (s_mp3 >= 0) {
+          /* Prime the compressed ring, then init the decoder. */
+          while (sceMp3CheckStreamDataNeeded(s_mp3) > 0 && mp3_fill() > 0) {
+          }
+          if (sceMp3Init(s_mp3) >= 0) {
+            sceMp3SetLoopNum(s_mp3, s_cmd.loop ? -1 : 0);
+            s_mp3_loop = s_cmd.loop ? 1 : 0;
+            s_mp3_ch = sceMp3GetMp3ChannelNum(s_mp3);
+            if (s_mp3_ch < 1)
+              s_mp3_ch = 2;
+            s_mus.active = 1; /* mixer may now pop the ring */
+          } else {
+            mp3_teardown();
+          }
+        } else {
+          mp3_teardown();
+        }
+      }
+      __sync_synchronize();
+      s_cmd.req = 0;
+    } else if (req == 2) {
+      mp3_teardown();
+      __sync_synchronize();
+      s_cmd.req = 0;
+    }
+
+    if (s_mp3 >= 0 && s_mus.active) {
+      if (sceMp3CheckStreamDataNeeded(s_mp3) > 0)
+        mp3_fill();
+      short* pcm = NULL;
+      int bytes = sceMp3Decode(s_mp3, &pcm);
+      if (bytes > 0 && pcm) {
+        uint32_t frames = (uint32_t)bytes / (2 * (uint32_t)s_mp3_ch);
+        ring_write((const int16_t*)pcm, frames, s_mp3_ch);
+      } else if (bytes <= 0) {
+        /* End of stream or decode fault. Loop resets to the top; a one-shot
+         * goes quiet (the ring drains, then the mixer sees active==0). */
+        if (s_mp3_loop) {
+          sceMp3ResetPlayPosition(s_mp3);
+          while (sceMp3CheckStreamDataNeeded(s_mp3) > 0 && mp3_fill() > 0) {
+          }
+        } else {
+          s_mus.active = 0;
+        }
+        sceKernelDelayThread(1000);
+      }
+    } else {
+      sceKernelDelayThread(1000); /* idle: waiting for a command */
+    }
+  }
+
+  mp3_teardown();
+  sceKernelExitThread(0);
+  return 0;
+}
+
 /* ---- Backend entry points ---------------------------------------------- */
 
 int backend_audio_init(void) {
   memset(s_voices, 0, sizeof(s_voices));
-  memset(s_mus_cache, 0, sizeof(s_mus_cache));
   memset((void*)&s_mus, 0, sizeof(s_mus));
+  memset((void*)&s_cmd, 0, sizeof(s_cmd));
   s_seq = 0;
   s_quit = 0;
-  s_mus_req = 0;
   s_mus_paused = 0;
   s_mus_gain_q15 = PSP_Q15;
+  s_mp3 = -1;
+  s_mp3_fd = -1;
+  s_mp3_loop = 0;
+  s_mp3_ch = 2;
+
+  /* sceMp3 decode needs the AV codec + MP3 modules loaded once (island1-ym91).
+   * Failure leaves music silent but SFX fully working. */
+  if (sceUtilityLoadModule(PSP_MODULE_AV_AVCODEC) < 0 ||
+      sceUtilityLoadModule(PSP_MODULE_AV_MP3) < 0) {
+    fprintf(stderr, "audio_psp: sceMp3 modules unavailable; music silent\n");
+  } else if (sceMp3InitResource() < 0) {
+    fprintf(stderr, "audio_psp: sceMp3InitResource failed\n");
+  }
+
+  s_ring = (int16_t*)memalign(64, (size_t)PSP_RING_FRAMES * 2 * sizeof(int16_t));
+  if (!s_ring)
+    return -1;
+  memset(s_ring, 0, (size_t)PSP_RING_FRAMES * 2 * sizeof(int16_t));
+
+  s_mp3_in = (unsigned char*)memalign(64, MP3_STREAM_BUF);
+  s_mp3_pcm = (unsigned char*)memalign(64, MP3_PCM_BUF);
+  if (!s_mp3_in || !s_mp3_pcm) {
+    free(s_ring);
+    s_ring = NULL;
+    free(s_mp3_in);
+    s_mp3_in = NULL;
+    free(s_mp3_pcm);
+    s_mp3_pcm = NULL;
+    return -1;
+  }
+  memset(s_mp3_in, 0, MP3_STREAM_BUF);
+  memset(s_mp3_pcm, 0, MP3_PCM_BUF);
 
   s_ch = sceAudioChReserve(-1, PSP_PERIOD_FRAMES, PSP_AUDIO_FORMAT_STEREO);
   if (s_ch < 0) {
@@ -406,6 +585,13 @@ int backend_audio_init(void) {
     return -1;
   }
   s_pcm = (int16_t*)s_pcm_raw;
+
+  s_mus_th = sceKernelCreateThread("island_music", music_thread, PSP_MUSIC_PRIO, 0x10000, PSP_THREAD_ATTR_USER, 0);
+  if (s_mus_th < 0) {
+    fprintf(stderr, "audio_psp: music thread failed 0x%x\n", (unsigned)s_mus_th);
+  } else {
+    sceKernelStartThread(s_mus_th, 0, NULL);
+  }
 
   s_mix_th = sceKernelCreateThread("island_audio", mix_thread, 0x12, 0x10000, PSP_THREAD_ATTR_USER, 0);
   if (s_mix_th < 0) {
@@ -423,12 +609,26 @@ int backend_audio_init(void) {
 
 void backend_audio_shutdown(void) {
   s_quit = 1;
+  if (s_mus_th >= 0) {
+    sceKernelWaitThreadEnd(s_mus_th, NULL);
+    sceKernelDeleteThread(s_mus_th);
+    s_mus_th = -1;
+  }
   if (s_mix_th >= 0) {
     sceKernelWaitThreadEnd(s_mix_th, NULL);
     sceKernelDeleteThread(s_mix_th);
     s_mix_th = -1;
   }
   s_mus.active = 0;
+  if (s_mp3 >= 0) {
+    sceMp3ReleaseMp3Handle(s_mp3);
+    s_mp3 = -1;
+  }
+  if (s_mp3_fd >= 0) {
+    sceIoClose(s_mp3_fd);
+    s_mp3_fd = -1;
+  }
+  sceMp3TermResource();
   if (s_ch >= 0) {
     sceAudioChRelease(s_ch);
     s_ch = -1;
@@ -436,10 +636,12 @@ void backend_audio_shutdown(void) {
   free(s_pcm_raw);
   s_pcm_raw = NULL;
   s_pcm = NULL;
-  for (int i = 0; i < PSP_MUSIC_CACHE; i++) {
-    free(s_mus_cache[i].data);
-    s_mus_cache[i].data = NULL;
-  }
+  free(s_ring);
+  s_ring = NULL;
+  free(s_mp3_in);
+  s_mp3_in = NULL;
+  free(s_mp3_pcm);
+  s_mp3_pcm = NULL;
 }
 
 int backend_audio_sfx_load(AudioSfx id, const char* relpath) {
@@ -484,60 +686,27 @@ void backend_audio_voice_stop(int voice, int loop) {
   voice_stop(voice, loop);
 }
 
-/* Find (or load into) the resident cache for this path. Game thread. */
-static MusicCache* music_cache_get(const char* path) {
-  for (int i = 0; i < PSP_MUSIC_CACHE; i++) {
-    if (s_mus_cache[i].data && strcmp(s_mus_cache[i].path, path) == 0)
-      return &s_mus_cache[i];
-  }
-  for (int i = 0; i < PSP_MUSIC_CACHE; i++) {
-    if (!s_mus_cache[i].data) {
-      int16_t* data;
-      uint32_t frames, rate;
-      uint16_t ch;
-      if (wav_load_resident(path, 2, &data, &frames, &rate, &ch) != 0)
-        return NULL;
-      snprintf(s_mus_cache[i].path, sizeof(s_mus_cache[i].path), "%s", path);
-      s_mus_cache[i].data = data;
-      s_mus_cache[i].frames = frames;
-      return &s_mus_cache[i];
-    }
-  }
-  /* Cache full: evict slot 0 (only 2 tracks in practice). */
-  free(s_mus_cache[0].data);
-  s_mus_cache[0].data = NULL;
-  return music_cache_get(path);
-}
-
+/* Stage a play request to the music thread (it owns sceMp3 + all disc IO).
+ * The mixer stays live the whole time; this never blocks on the UMD. */
 int backend_audio_music_play(const char* relpath, int loop) {
   char path[PSP_PATH_MAX];
-  if (resolve_path(relpath, ".wav", path, sizeof(path)) != 0)
+  if (resolve_path(relpath, ".mp3", path, sizeof(path)) != 0)
     return -1;
-  /* Load-to-RAM on first play (one UMD read on the game thread, masked by
-   * the scene transition); cached thereafter so track switches are instant. */
-  MusicCache* c = music_cache_get(path);
-  if (!c)
-    return -1;
-
-  while (s_mus_req)
+  while (s_cmd.req)
     sceKernelDelayThread(100);
-  /* Stage the new track; the mixer turns it on at the next period. */
-  s_mus.data = c->data;
-  s_mus.frames = c->frames;
-  s_mus.pos = 0;
-  s_mus.loop = loop ? 1 : 0;
+  snprintf(s_cmd.path, sizeof(s_cmd.path), "%s", path);
+  s_cmd.loop = loop ? 1 : 0;
   s_mus_paused = 0;
   __sync_synchronize();
-  s_mus_req = 1;
-  s_mus.active = 1;
+  s_cmd.req = 1;
   return 0;
 }
 
 void backend_audio_music_stop(void) {
-  while (s_mus_req)
+  while (s_cmd.req)
     sceKernelDelayThread(100);
   __sync_synchronize();
-  s_mus_req = 2;
+  s_cmd.req = 2;
 }
 
 void backend_audio_music_pause(int paused) {

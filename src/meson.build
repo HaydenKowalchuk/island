@@ -272,6 +272,7 @@ elif opt_platform == 'psp'
     '-lpspsdk',
     '-lpsprtc',
     '-lpspaudio',
+    '-lpspmp3',
     '-lpsppower',
     '-Wl,--start-group',
     '-lc',
@@ -312,30 +313,55 @@ elif opt_platform == 'psp'
     build_always_stale: true,
   )
 
-  # WAV sound masters next to the textures (same as desktop); the ISO target
-  # below packages build assets/ into USRDIR, so audio rides along for free
-  # and island1-26pd's eventual PSP backend finds it through the standard
-  # relative "assets" root. No conversion: PSP plays the masters directly.
-  # depends on the texture copy so the two always-stale targets don't race
-  # (texture recopies rm -rf assets/; the audio diff self-heals after).
+  # WAV masters -> PSP formats (scripts/convert_audio.py --target psp): SFX
+  # stay WAV (resident in RAM, tens of KB), music becomes 128 kbps MP3
+  # (island1-ym91) that sceMp3 streams from UMD and decodes on the Media
+  # Engine -- a 1-minute track is ~1 MB vs ~10 MB as WAV. Always-stale so
+  # master edits are picked up on the next ninja run.
+  psp_audio_sources = []
+  if audio_master_root != ''
+    psp_audio_sources = custom_target(
+      'psp-convert-audio',
+      input: [],
+      output: 'psp_audio.stamp',
+      command: [
+        find_program('sh'),
+        '-c',
+        'python3 "$0" --target psp --src "$1" --out "$2" && touch "$3"',
+        meson.project_source_root() / 'scripts' / 'convert_audio.py',
+        audio_master_root,
+        meson.current_build_dir() / 'psp_audio_out',
+        '@OUTPUT@',
+      ],
+      build_by_default: true,
+      build_always_stale: true,
+      install: false,
+    )
+  endif
+
+  # Overlay the converted audio next to the textures; the ISO target below
+  # packages build assets/ into USRDIR, so audio rides along for free and the
+  # backend finds it through the standard relative "assets" root. depends on
+  # the texture copy so the two always-stale targets don't race (texture
+  # recopies rm -rf assets/; the audio diff self-heals after).
   if audio_master_root != ''
     psp_copy_audio = custom_target(
       'psp-copy-audio',
       input: [],
       output: 'audio.stamp',
+      depends: [psp_copy_assets, psp_audio_sources],
       command: [
         find_program('sh'),
         '-c',
         'stale=0; '
         + 'if [ ! -f "$0" ]; then stale=1; '
-        + 'elif ! diff -rq "$1" "$2/assets/audio" >/dev/null 2>&1; then stale=1; fi; '
-        + 'if [ "$stale" = 1 ]; then rm -rf "$2/assets/audio" && mkdir -p "$2/assets" '
-        + '&& cp -R "$1" "$2/assets/audio" && touch "$0"; fi',
+        + 'elif [ ! -d "$2" ] || ! diff -rq "$2" "$1/assets/audio" >/dev/null 2>&1; then stale=1; fi; '
+        + 'if [ "$stale" = 1 ]; then rm -rf "$1/assets/audio" && mkdir -p "$1/assets" '
+        + '&& cp -R "$2" "$1/assets/audio" && touch "$0"; fi',
         '@OUTPUT@',
-        audio_master_root / 'audio',
         meson.current_build_dir(),
+        meson.current_build_dir() / 'psp_audio_out' / 'audio',
       ],
-      depends: [psp_copy_assets],
       build_by_default: true,
       build_always_stale: true,
     )

@@ -1,30 +1,36 @@
 #!/usr/bin/env python3
-"""island Dreamcast audio conversion.
+"""island audio conversion (Dreamcast + PSP).
 
-Turns the WAV masters (source of truth, island1-zozu) into the headerless
-formats the KOS backends load (island1-rau9):
+Turns the WAV masters (source of truth, island1-zozu) into the per-console
+formats the backends load:
 
+  Dreamcast (island1-rau9):
     sfx   -> 8-bit signed mono 22050 Hz raw, padded to a 32-byte multiple
              (snd_sfx_load_raw_buf; KOS documents the 32-byte alignment)
     music -> interleaved Yamaha/AICA ADPCM stereo 44.1 kHz, no header
              (snd_stream_start_adpcm), produced by the KOS wav2adpcm tool
              with the same flags wipeout-dc's HOWTO uses: -n -i -t
 
-Desktop never runs this — it plays the WAV masters directly. Meson invokes
-it for the dreamcast build only, and only when an audio_assets checkout (or
-.scratch/audio_assets placeholders) is present.
+  PSP (island1-ym91):
+    sfx   -> the WAV masters, copied verbatim (resident in RAM; ~tens of KB)
+    music -> 128 kbps MP3, 44.1 kHz stereo (lame). sceMp3 decodes on the Media
+             Engine; a 1-minute track is ~1 MB vs ~10 MB as WAV, and streams
+             from UMD without stalling the mixer.
+
+Desktop never runs this — it plays the WAV masters directly. Meson invokes it
+for the dreamcast and psp builds only, and only when an audio_assets checkout
+(or .scratch/audio_assets placeholders) is present.
 
 Usage:
-    python3 scripts/convert_audio.py --src audio_assets --out build-dc/src/assets
-    python3 scripts/convert_audio.py --src .scratch/audio_assets --out /tmp/out
+    python3 scripts/convert_audio.py --target dc   --src audio_assets --out build-dc/src/assets
+    python3 scripts/convert_audio.py --target psp --src audio_assets --out build_psp/src/assets
 
-WAV2ADPCM override: set the WAV2ADPCM environment variable if the tool is
-not at the default KOS path.
+Overrides: WAV2ADPCM (dc music tool path), LAME (psp mp3 encoder path).
 """
 
 import argparse
 import os
-import struct
+import shutil
 import subprocess
 import sys
 import wave
@@ -35,6 +41,12 @@ ROOT = Path(__file__).resolve().parent.parent
 SFX_RATE = 22050
 SFX_ALIGN = 32
 WAV2ADPCM_DEFAULT = "/opt/toolchains/dc/kos/utils/wav2adpcm/wav2adpcm"
+LAME_DEFAULT = "lame"
+# sceMp3 decodes on the Media Engine; 128 kbps stereo is the sweet spot for
+# game music (small UMD footprint, transparent quality). 44.1 kHz matches the
+# mixer output rate, so no resampling is needed on the PSP.
+PSP_MP3_BITRATE = "128"
+PSP_MP3_RATE = "44100"
 
 
 def read_wav_mono16(path):
@@ -112,6 +124,28 @@ def to_music_adpcm(src_wav, dst_adpcm, wav2adpcm):
     print(f"  {dst_adpcm.name}: {size} bytes (interleaved AICA ADPCM)")
 
 
+def to_music_mp3(src_wav, dst_mp3, lame):
+    """128 kbps / 44.1 kHz stereo MP3 via lame (PSP sceMp3 source)."""
+    if shutil.which(lame) is None and not Path(lame).is_file():
+        raise SystemExit(f"lame not found at {lame} (set LAME to override)")
+    dst_mp3.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run([
+        str(lame), "--silent", "-b", PSP_MP3_BITRATE,
+        "--resample", PSP_MP3_RATE, "-m", "j",
+        str(src_wav), str(dst_mp3),
+    ], check=True)
+    size = dst_mp3.stat().st_size
+    print(f"  {dst_mp3.name}: {size} bytes (MP3 {PSP_MP3_BITRATE} kbps "
+          f"{PSP_MP3_RATE} Hz stereo)")
+
+
+def copy_sfx_wav(src_wav, dst_wav):
+    """PSP SFX stay as WAV masters, resident in RAM (tens of KB each)."""
+    dst_wav.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src_wav, dst_wav)
+    print(f"  {dst_wav.name}: {dst_wav.stat().st_size} bytes (WAV, resident)")
+
+
 def default_src():
     if (ROOT / "audio_assets" / "audio").is_dir():
         return ROOT / "audio_assets"
@@ -120,6 +154,8 @@ def default_src():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--target", choices=["dc", "psp"], default="dc",
+                    help="console to convert for (default: dc)")
     ap.add_argument("--src", type=Path, default=None,
                     help="master tree (default: audio_assets, else "
                          ".scratch/audio_assets)")
@@ -135,8 +171,18 @@ def main():
               f"placeholders or check out audio_assets", file=sys.stderr)
         return 1
 
-    wav2adpcm = Path(os.environ.get("WAV2ADPCM", WAV2ADPCM_DEFAULT))
+    if args.target == "psp":
+        lame = os.environ.get("LAME", LAME_DEFAULT)
+        if sfx_dir.is_dir():
+            for wav in sorted(sfx_dir.glob("*.wav")):
+                copy_sfx_wav(wav, args.out / "audio" / "sfx" / f"{wav.stem}.wav")
+        if music_dir.is_dir():
+            for wav in sorted(music_dir.glob("*.wav")):
+                to_music_mp3(wav, args.out / "audio" / "music" /
+                             f"{wav.stem}.mp3", lame)
+        return 0
 
+    wav2adpcm = Path(os.environ.get("WAV2ADPCM", WAV2ADPCM_DEFAULT))
     if sfx_dir.is_dir():
         for wav in sorted(sfx_dir.glob("*.wav")):
             to_sfx_raw(wav, args.out / "audio" / "sfx" / f"{wav.stem}.raw")
