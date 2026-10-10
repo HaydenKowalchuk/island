@@ -32,46 +32,39 @@ int main(void) {
    * volume, centered, no shift. */
   float ahead[3] = {0.0f, 0.0f, 2.0f};
   float zero[3] = {0.0f, 0.0f, 0.0f};
-  audio_calc_positional(listener, 0.0f, lvel, ahead, zero, 1.0f, &vol, &pan,
-                        &pitch);
+  audio_calc_positional(listener, 0.0f, lvel, ahead, zero, 1.0f, &vol, &pan, &pitch);
   check(near(vol, 1.0f, 0.01f), "ahead: full volume inside near radius");
   check(near(pan, 0.0f, 0.02f), "ahead: centered pan");
   check(near(pitch, 1.0f, 0.001f), "ahead: no doppler at rest");
 
   /* To the right of a +z-facing listener pans right (+1 side). */
   float right[3] = {10.0f, 0.0f, 0.0f};
-  audio_calc_positional(listener, 0.0f, lvel, right, zero, 1.0f, &vol, &pan,
-                        &pitch);
+  audio_calc_positional(listener, 0.0f, lvel, right, zero, 1.0f, &vol, &pan, &pitch);
   check(pan > 0.7f, "right side pans positive");
 
   /* Mirrored: to the left pans left. */
   float left[3] = {-10.0f, 0.0f, 0.0f};
-  audio_calc_positional(listener, 0.0f, lvel, left, zero, 1.0f, &vol, &pan,
-                        &pitch);
+  audio_calc_positional(listener, 0.0f, lvel, left, zero, 1.0f, &vol, &pan, &pitch);
   check(pan < -0.7f, "left side pans negative");
 
   /* Past the far radius is silent. */
   float far[3] = {0.0f, 0.0f, AUDIO_FAR_M + 10.0f};
-  audio_calc_positional(listener, 0.0f, lvel, far, zero, 1.0f, &vol, &pan,
-                        &pitch);
+  audio_calc_positional(listener, 0.0f, lvel, far, zero, 1.0f, &vol, &pan, &pitch);
   check(vol <= 0.0f, "past far radius: silent");
 
   /* Receding source (moving away along +z) drops pitch below 1. */
   float away_vel[3] = {0.0f, 0.0f, 20.0f};
-  audio_calc_positional(listener, 0.0f, lvel, ahead, away_vel, 1.0f, &vol,
-                        &pan, &pitch);
+  audio_calc_positional(listener, 0.0f, lvel, ahead, away_vel, 1.0f, &vol, &pan, &pitch);
   check(pitch < 1.0f, "receding source: pitch drops");
 
   /* Approaching source raises pitch above 1. */
   float towards_vel[3] = {0.0f, 0.0f, -20.0f};
-  audio_calc_positional(listener, 0.0f, lvel, ahead, towards_vel, 1.0f, &vol,
-                        &pan, &pitch);
+  audio_calc_positional(listener, 0.0f, lvel, ahead, towards_vel, 1.0f, &vol, &pan, &pitch);
   check(pitch > 1.0f, "approaching source: pitch rises");
 
   /* Listener yaw rotates the pan frame: source at +x is ahead for yaw=+90
    * (facing +x), so it centers instead of panning right. */
-  audio_calc_positional(listener, (float)(3.14159265f * 0.5f), lvel, right,
-                        zero, 1.0f, &vol, &pan, &pitch);
+  audio_calc_positional(listener, (float)(3.14159265f * 0.5f), lvel, right, zero, 1.0f, &vol, &pan, &pitch);
   check(near(pan, 0.0f, 0.05f), "yaw +90: +x source centers");
 
   /* ---- Headless lifecycle + node pool --------------------------------- */

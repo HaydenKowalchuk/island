@@ -1,14 +1,14 @@
-#include "audio.h"
-
-#include <kos.h>
 #include <dc/sound/aica_comm.h>
 #include <dc/sound/sfxmgr.h>
 #include <dc/sound/sound.h>
 #include <dc/sound/stream.h>
+#include <kos.h>
 #include <malloc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "audio.h"
 
 /*
  * Dreamcast audio backend (island1-rau9): a direct port of wipeout-dc's
@@ -46,7 +46,8 @@ typedef struct snd_effect {
   uint32_t used;
   uint32_t fmt;
   uint16_t stereo;
-  LIST_ENTRY(snd_effect) list;
+  LIST_ENTRY(snd_effect)
+  list;
 } snd_effect_t;
 
 extern int snd_sh4_to_aica(void* packet, uint32_t size);
@@ -93,8 +94,7 @@ static const char* asset_root(void) {
 }
 
 /* Probe the root chain for relpath+suffix; 0 = found. */
-static int resolve_path(const char* relpath, const char* suffix, char* out,
-                        int out_len) {
+static int resolve_path(const char* relpath, const char* suffix, char* out, int out_len) {
   static const char* roots[3];
   roots[0] = getenv("AUDIO_ASSET_DIR");
   roots[1] = getenv("ASSET_DIR");
@@ -156,8 +156,7 @@ static int dc_sfx_load(AudioSfx id, const char* relpath) {
   return 0;
 }
 
-static int dc_sfx_play(AudioSfx id, float volume, float pan, float pitch,
-                       int loop) {
+static int dc_sfx_play(AudioSfx id, float volume, float pan, float pitch, int loop) {
   if (id <= AUDIO_SFX_NONE || id >= AUDIO_SFX_COUNT)
     return -1;
   sfxhnd_t h = s_sfx_hnd[id];
@@ -472,13 +471,11 @@ void backend_audio_sfx_unload_all(void) {
     s_sfx_hnd[i] = SFXHND_INVALID;
 }
 
-int backend_audio_sfx_play(AudioSfx id, float volume, float pan, float pitch,
-                           int loop) {
+int backend_audio_sfx_play(AudioSfx id, float volume, float pan, float pitch, int loop) {
   return dc_sfx_play(id, volume, pan, pitch, loop);
 }
 
-void backend_audio_voice_update(int voice, float volume, float pan,
-                                float pitch) {
+void backend_audio_voice_update(int voice, float volume, float pan, float pitch) {
   dc_voice_update(voice, volume, pan, pitch);
 }
 

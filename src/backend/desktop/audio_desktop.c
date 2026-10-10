@@ -1,9 +1,9 @@
-#include "audio.h"
-
 #include <miniaudio.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "audio.h"
 
 /*
  * Desktop audio backend (island1-a9pu): ma_engine with a resident SFX voice
@@ -32,8 +32,7 @@ static int s_music_up = 0;
 /* Probe the same root chain the texture loaders use, plus the dedicated
  * audio-assets checkout (island1-zozu): AUDIO_ASSET_DIR, ASSET_DIR,
  * audio_assets (repo-relative submodule), assets. */
-static int resolve_path(const char* relpath, const char* suffix, char* out,
-                        int out_len) {
+static int resolve_path(const char* relpath, const char* suffix, char* out, int out_len) {
   static const char* roots[] = {NULL, NULL, "audio_assets", "assets"};
   roots[0] = getenv("AUDIO_ASSET_DIR");
   roots[1] = getenv("ASSET_DIR");
@@ -113,8 +112,7 @@ static int voice_bind(int voice, AudioSfx id, const char* relpath) {
     ma_sound_uninit(&slot->sound);
     slot->inited = 0;
   }
-  if (ma_sound_init_from_file(&s_engine, path, MA_SOUND_FLAG_DECODE, NULL, NULL,
-                              &slot->sound) != MA_SUCCESS)
+  if (ma_sound_init_from_file(&s_engine, path, MA_SOUND_FLAG_DECODE, NULL, NULL, &slot->sound) != MA_SUCCESS)
     return -1;
   slot->inited = 1;
   slot->id = id;
@@ -160,8 +158,7 @@ static int voice_pick(int loop) {
   return -1;
 }
 
-int backend_audio_sfx_play(AudioSfx id, float volume, float pan, float pitch,
-                           int loop) {
+int backend_audio_sfx_play(AudioSfx id, float volume, float pan, float pitch, int loop) {
   if (!s_engine_up)
     return -1;
   const char* relpath = sfx_relpath(id);
@@ -183,8 +180,7 @@ int backend_audio_sfx_play(AudioSfx id, float volume, float pan, float pitch,
   return voice;
 }
 
-void backend_audio_voice_update(int voice, float volume, float pan,
-                                float pitch) {
+void backend_audio_voice_update(int voice, float volume, float pan, float pitch) {
   if (!s_engine_up || voice < 0 || voice >= MAX_VOICES ||
       !s_voices[voice].inited)
     return;
@@ -216,8 +212,7 @@ int backend_audio_music_play(const char* relpath, int loop) {
     ma_sound_uninit(&s_music);
     s_music_up = 0;
   }
-  if (ma_sound_init_from_file(&s_engine, path, MA_SOUND_FLAG_STREAM, NULL, NULL,
-                              &s_music) != MA_SUCCESS)
+  if (ma_sound_init_from_file(&s_engine, path, MA_SOUND_FLAG_STREAM, NULL, NULL, &s_music) != MA_SUCCESS)
     return -1;
   s_music_up = 1;
   ma_sound_set_looping(&s_music, loop ? MA_TRUE : MA_FALSE);

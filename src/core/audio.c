@@ -61,10 +61,7 @@ static float clampf(float v, float lo, float hi) {
 
 /* ---- Positional math -------------------------------------------------- */
 
-void audio_calc_positional(const float listener_pos[3], float listener_yaw,
-                           const float listener_vel[3], const float pos[3],
-                           const float vel[3], float volume, float* out_vol,
-                           float* out_pan, float* out_pitch) {
+void audio_calc_positional(const float listener_pos[3], float listener_yaw, const float listener_vel[3], const float pos[3], const float vel[3], float volume, float* out_vol, float* out_pan, float* out_pitch) {
   float rx = pos[0] - listener_pos[0];
   float ry = pos[1] - listener_pos[1];
   float rz = pos[2] - listener_pos[2];
@@ -116,9 +113,7 @@ static AudioVoice* voice_alloc(AudioSfx id, unsigned extra_flags) {
 }
 
 static void voice_apply(AudioVoice* v) {
-  backend_audio_voice_update(v->voice, clampf(v->volume * s_sfx_bus * s_master,
-                                              0.0f, 1.0f),
-                             v->pan, v->pitch);
+  backend_audio_voice_update(v->voice, clampf(v->volume * s_sfx_bus * s_master, 0.0f, 1.0f), v->pan, v->pitch);
 }
 
 /* ---- Lifecycle -------------------------------------------------------- */
@@ -185,9 +180,7 @@ AudioVoice* audio_play(AudioSfx id) {
   AudioVoice* v = voice_alloc(id, 0);
   if (!v)
     return NULL;
-  v->voice = backend_audio_sfx_play(id, clampf(v->volume * s_sfx_bus * s_master,
-                                               0.0f, 1.0f),
-                                    0.0f, 1.0f, 0);
+  v->voice = backend_audio_sfx_play(id, clampf(v->volume * s_sfx_bus * s_master, 0.0f, 1.0f), 0.0f, 1.0f, 0);
   if (v->voice < 0) {
     v->flags = 0;
     return NULL;
@@ -195,13 +188,11 @@ AudioVoice* audio_play(AudioSfx id) {
   return v;
 }
 
-AudioVoice* audio_play_at(AudioSfx id, const float pos[3], const float vel[3],
-                          float volume) {
+AudioVoice* audio_play_at(AudioSfx id, const float pos[3], const float vel[3], float volume) {
   if (!s_inited || id <= AUDIO_SFX_NONE || id >= AUDIO_SFX_COUNT)
     return NULL;
   float vol, pan, pitch;
-  audio_calc_positional(s_listener_pos, s_listener_yaw, s_listener_vel, pos,
-                        vel, volume, &vol, &pan, &pitch);
+  audio_calc_positional(s_listener_pos, s_listener_yaw, s_listener_vel, pos, vel, volume, &vol, &pan, &pitch);
   if (vol <= 0.0f)
     return NULL; /* inaudible: skip the voice entirely (wipeout behaviour) */
 
@@ -211,9 +202,7 @@ AudioVoice* audio_play_at(AudioSfx id, const float pos[3], const float vel[3],
   v->volume = vol;
   v->pan = pan;
   v->pitch = pitch;
-  v->voice = backend_audio_sfx_play(id, clampf(vol * s_sfx_bus * s_master, 0.0f,
-                                               1.0f),
-                                    pan, pitch, 0);
+  v->voice = backend_audio_sfx_play(id, clampf(vol * s_sfx_bus * s_master, 0.0f, 1.0f), pan, pitch, 0);
   if (v->voice < 0) {
     v->flags = 0;
     return NULL;
@@ -248,13 +237,11 @@ void audio_voice_update(AudioVoice* v, float volume, float pan, float pitch) {
   voice_apply(v);
 }
 
-void audio_voice_set_position(AudioVoice* v, const float pos[3],
-                              const float vel[3], float volume) {
+void audio_voice_set_position(AudioVoice* v, const float pos[3], const float vel[3], float volume) {
   if (!v || !(v->flags & AV_ACTIVE))
     return;
   float vol, pan, pitch;
-  audio_calc_positional(s_listener_pos, s_listener_yaw, s_listener_vel, pos,
-                        vel, volume, &vol, &pan, &pitch);
+  audio_calc_positional(s_listener_pos, s_listener_yaw, s_listener_vel, pos, vel, volume, &vol, &pan, &pitch);
   v->volume = vol;
   v->pan = pan;
   v->pitch = pitch;

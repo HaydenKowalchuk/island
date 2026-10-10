@@ -859,8 +859,7 @@ static void drive_car(float dt) {
    * every frame -- idle burble at 0, full song at speed01=1. */
   if (!s_engine_voice)
     s_engine_voice = audio_reserve_loop(AUDIO_SFX_ENGINE);
-  audio_voice_update(s_engine_voice, 0.15f + 0.55f * speed01, 0.0f,
-                     0.6f + 0.8f * speed01);
+  audio_voice_update(s_engine_voice, 0.15f + 0.55f * speed01, 0.0f, 0.6f + 0.8f * speed01);
 
   /*
    * Terrain-normal tilt (island1-9gio): sample fore/aft and abeam so the hull

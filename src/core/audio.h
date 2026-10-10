@@ -47,8 +47,7 @@ AudioVoice* audio_play(AudioSfx id);
 
 /* 3D one-shot: world position, source velocity (for doppler), volume 0..1.
  * Falloff/pan/pitch are computed from the listener set by audio_listener. */
-AudioVoice* audio_play_at(AudioSfx id, const float pos[3], const float vel[3],
-                          float volume);
+AudioVoice* audio_play_at(AudioSfx id, const float pos[3], const float vel[3], float volume);
 
 /* Dedicated looping voice (engine hum, ambience): reserved so one-shots never
  * steal its channel; starts silent (volume 0). */
@@ -59,8 +58,7 @@ void audio_voice_update(AudioVoice* v, float volume, float pan, float pitch);
 
 /* Re-derive volume/pan/pitch from a world position and push (positional
  * loops: crowd, remote engines). */
-void audio_voice_set_position(AudioVoice* v, const float pos[3],
-                              const float vel[3], float volume);
+void audio_voice_set_position(AudioVoice* v, const float pos[3], const float vel[3], float volume);
 
 void audio_voice_stop(AudioVoice* v);
 
@@ -87,10 +85,7 @@ void audio_set_music_volume(float v);
  */
 #define AUDIO_NEAR_M 4.0f
 #define AUDIO_FAR_M 90.0f
-void audio_calc_positional(const float listener_pos[3], float listener_yaw,
-                           const float listener_vel[3], const float pos[3],
-                           const float vel[3], float volume, float* out_vol,
-                           float* out_pan, float* out_pitch);
+void audio_calc_positional(const float listener_pos[3], float listener_yaw, const float listener_vel[3], const float pos[3], const float vel[3], float volume, float* out_vol, float* out_pan, float* out_pitch);
 
 /* ---- Backend primitives ------------------------------------------------
  * Implemented per platform (audio_desktop.c / audio_dc.c / audio_psp.c) or
@@ -107,10 +102,8 @@ void backend_audio_sfx_unload_all(void);
 
 /* Play: loop!=0 starts a looping voice at volume 0 (reserve semantics).
  * Returns a backend voice id (>=0) or -1. */
-int backend_audio_sfx_play(AudioSfx id, float volume, float pan, float pitch,
-                           int loop);
-void backend_audio_voice_update(int voice, float volume, float pan,
-                                float pitch);
+int backend_audio_sfx_play(AudioSfx id, float volume, float pan, float pitch, int loop);
+void backend_audio_voice_update(int voice, float volume, float pan, float pitch);
 void backend_audio_voice_stop(int voice, int loop);
 
 int backend_audio_music_play(const char* relpath, int loop);

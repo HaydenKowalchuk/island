@@ -23,8 +23,7 @@ int backend_audio_sfx_load(AudioSfx id, const char* relpath) {
 void backend_audio_sfx_unload_all(void) {
 }
 
-int backend_audio_sfx_play(AudioSfx id, float volume, float pan, float pitch,
-                           int loop) {
+int backend_audio_sfx_play(AudioSfx id, float volume, float pan, float pitch, int loop) {
   (void)id;
   (void)volume;
   (void)pan;
@@ -33,8 +32,7 @@ int backend_audio_sfx_play(AudioSfx id, float volume, float pan, float pitch,
   return 0; /* dummy voice id; updates/stops land harmlessly */
 }
 
-void backend_audio_voice_update(int voice, float volume, float pan,
-                                float pitch) {
+void backend_audio_voice_update(int voice, float volume, float pan, float pitch) {
   (void)voice;
   (void)volume;
   (void)pan;
