@@ -72,7 +72,7 @@ if opt_platform == 'desktop'
   # Keep the art (and sound masters) next to the binary; run.sh points
   # ASSET_DIR at this build assets tree, and the loader's "assets" fallback
   # resolves the same relative root.
-  custom_target(
+  desktop_copy_assets = custom_target(
     'desktop-copy-assets',
     input: [],
     output: 'assets.stamp',
@@ -96,7 +96,10 @@ if opt_platform == 'desktop'
   # Sound masters live outside assets/ (island1-zozu); copy the WAVs next to
   # the textures so a plain `meson compile` leaves ASSET_DIR=<build>/assets
   # fully populated -- desktop plays the masters directly, no conversion.
-  # Stamp bumps only when the master tree actually differs.
+  # depends on the texture copy: both are always-stale and the texture
+  # target rm -rf's assets/ when it recopies, so they must not race. The
+  # audio stamp self-heals anyway -- its diff fails after a wipe and the
+  # masters are re-copied.
   if audio_master_root != ''
     custom_target(
       'desktop-copy-audio',
@@ -114,6 +117,7 @@ if opt_platform == 'desktop'
         audio_master_root / 'audio',
         meson.current_build_dir(),
       ],
+      depends: [desktop_copy_assets],
       build_by_default: true,
       build_always_stale: true,
     )
@@ -292,7 +296,7 @@ elif opt_platform == 'psp'
 
   # Keep the art next to EBOOT.PBP. The loader also searches host0:/assets and
   # ms0:/PSP/GAME/island/assets, so putting it here is just convenient.
-  custom_target(
+  psp_copy_assets = custom_target(
     'psp-copy-assets',
     input: [],
     output: 'assets.stamp',
@@ -300,10 +304,11 @@ elif opt_platform == 'psp'
     # are picked up (input: [] alone never re-ran after the first build).
     # Only recopy + bump the stamp when the tree actually differs, so
     # downstream targets keyed on the stamp don't rebuild on every ninja.
+    # audio/ is synced by psp-copy-audio below, so exclude it from the diff.
     command: [
       find_program('sh'),
       '-c',
-      'if [ -f "$0" ] && diff -rq "$1" "$2/assets" >/dev/null 2>&1; then :; '
+      'if [ -f "$0" ] && diff -rq --exclude=audio "$1" "$2/assets" >/dev/null 2>&1; then :; '
       + 'else rm -rf "$2/assets" && cp -R "$1" "$2" && touch "$0"; fi',
       '@OUTPUT@',
       meson.project_source_root() / 'assets',
@@ -312,6 +317,35 @@ elif opt_platform == 'psp'
     build_by_default: true,
     build_always_stale: true,
   )
+
+  # WAV sound masters next to the textures (same as desktop); the ISO target
+  # below packages build assets/ into USRDIR, so audio rides along for free
+  # and island1-26pd's eventual PSP backend finds it through the standard
+  # relative "assets" root. No conversion: PSP plays the masters directly.
+  # depends on the texture copy so the two always-stale targets don't race
+  # (texture recopies rm -rf assets/; the audio diff self-heals after).
+  if audio_master_root != ''
+    psp_copy_audio = custom_target(
+      'psp-copy-audio',
+      input: [],
+      output: 'audio.stamp',
+      command: [
+        find_program('sh'),
+        '-c',
+        'stale=0; '
+        + 'if [ ! -f "$0" ]; then stale=1; '
+        + 'elif ! diff -rq "$1" "$2/assets/audio" >/dev/null 2>&1; then stale=1; fi; '
+        + 'if [ "$stale" = 1 ]; then rm -rf "$2/assets/audio" && mkdir -p "$2/assets" '
+        + '&& cp -R "$1" "$2/assets/audio" && touch "$0"; fi',
+        '@OUTPUT@',
+        audio_master_root / 'audio',
+        meson.current_build_dir(),
+      ],
+      depends: [psp_copy_assets],
+      build_by_default: true,
+      build_always_stale: true,
+    )
+  endif
 
   # Post-process into a homebrew EBOOT.PBP (title, prx, then the two CFW
   # launcher aliases). Mirrors the working recipe in the dc/platformer tree.
@@ -322,7 +356,7 @@ elif opt_platform == 'psp'
 
   sfo = custom_target('island_sfo', output: 'param.sfo', command: [mksfo, 'island', '@OUTPUT@'])
 
-  custom_target(
+  island_psp_pbp = custom_target(
     'island_psp_pbp',
     input: [island_exe, sfo],
     output: 'EBOOT.PBP',
@@ -340,6 +374,32 @@ elif opt_platform == 'psp'
       sfo.full_path(),
     ],
     depends: island_exe,
+    build_by_default: true,
+    install: false,
+  )
+
+  # UMD ISO as part of the build, mirroring island-cdi on dreamcast: stage
+  # the tools/iso_root skeleton + XMB art from assets_psp/, overlay this
+  # build's assets (textures + sound masters), then inject the retail XA
+  # system-use field (iso_uxa.py -- long-name open() fix, see script). The
+  # script takes the build dir + output path so any meson build dir works;
+  # it still runs standalone as scripts/build_psp_iso.sh.
+  build_psp_iso = find_program(meson.project_source_root() / 'scripts' / 'build_psp_iso.sh', required: true)
+  iso_depends = [island_psp_pbp, sfo, psp_copy_assets]
+  if audio_master_root != ''
+    iso_depends += psp_copy_audio
+  endif
+  custom_target(
+    'island-iso',
+    input: [island_exe, sfo],
+    output: 'island.iso',
+    # The script expects the meson build ROOT (it looks for src/BOOT.BIN
+    # etc. inside); the output lands in this src/ dir like island_psp_pbp.
+    command: [build_psp_iso, meson.project_build_root(), '@OUTPUT@'],
+    # BOOT.BIN/param.sfo/assets/audio are side products of the pbp + copy
+    # targets; the script verifies every input anyway and dies with a clear
+    # msg if anything raced or is missing.
+    depends: iso_depends,
     build_by_default: true,
     install: false,
   )

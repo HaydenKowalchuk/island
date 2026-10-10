@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Package the PSP build into a bootable UMD ISO. Run after the cross build:
+# Package the PSP build into a bootable UMD ISO.
 #
-#   meson setup build_psp --buildtype=release -Dplatform=psp --cross-file mips-allegrex-psp
-#   meson compile -C build_psp
-#   ./scripts/build_psp_iso.sh          -> build_psp/island.iso
+#   ./scripts/build_psp_iso.sh [build-dir] [out.iso]
+#     defaults: build-dir=<repo>/build_psp, out.iso=<build-dir>/island.iso
+#
+# Also runs as the `island-iso` meson target (src/meson.build) on every
+# `meson compile -C build_psp`, matching island-cdi on dreamcast. It verifies
+# its inputs (BOOT.BIN, param.sfo, assets tree, iso_root skeleton, XMB art)
+# and dies with a clear message if any are missing.
 #
 # Staging happens in .scratch/psp_iso; the base skeleton in tools/iso_root
 # (copy of ~/Documents/Games/iso_root, example in tools/iso_root/build_iso.sh.example)
@@ -14,11 +18,11 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BUILD="$DIR/build_psp"
+BUILD="${1:-$DIR/build_psp}"
 BASE="$DIR/tools/iso_root"
 ART="$DIR/assets_psp"
 STAGE="$DIR/.scratch/psp_iso"
-OUT="$BUILD/island.iso"
+OUT="${2:-$BUILD/island.iso}"
 DISC_ID="HOME-90002"
 
 die() { echo "build_psp_iso: $*" >&2; exit 1; }
