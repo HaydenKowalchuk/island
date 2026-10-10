@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "audio.h"
+#include "psp_assets.h"
 
 /*
  * PSP audio backend (island1-26pd): native sceAudio, no miniaudio. Ports the
@@ -93,27 +94,15 @@ static int wav_parse(int fd, WavInfo* w) {
   }
 }
 
-/* ---- Path resolution (mirrors texture_gu.c roots) ---------------------- */
+/* ---- Path resolution (shared with texture_gu via psp_assets.c) ---------- */
 
+/* Build "<relpath><suffix>" and resolve it through the boot-kind-aware
+ * resolver. Returns 0 with the full path in out, or -1 if not found anywhere.
+ * No getenv: PSP firmware has no environment; the boot kind orders the roots. */
 static int resolve_path(const char* relpath, const char* suffix, char* out, int out_len) {
-  static const char* roots[5];
-  roots[0] = getenv("AUDIO_ASSET_DIR");
-  roots[1] = getenv("ASSET_DIR");
-  roots[2] = "disc0:/PSP_GAME/USRDIR/assets";
-  roots[3] = "host0:/assets";
-  roots[4] = "ms0:/PSP/GAME/island/assets";
-
-  for (int i = 0; i < 5; i++) {
-    if (!roots[i] || !*roots[i])
-      continue;
-    snprintf(out, out_len, "%s/%s%s", roots[i], relpath, suffix);
-    int fd = sceIoOpen(out, PSP_O_RDONLY, 0777);
-    if (fd >= 0) {
-      sceIoClose(fd);
-      return 0;
-    }
-  }
-  return -1;
+  char rel[PSP_PATH_MAX];
+  snprintf(rel, sizeof(rel), "%s%s", relpath, suffix);
+  return psp_asset_path(rel, out, out_len) ? 0 : -1;
 }
 
 /* Load an entire WAV's data chunk into a fresh buffer (mono or stereo). On

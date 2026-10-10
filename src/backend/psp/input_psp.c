@@ -59,8 +59,6 @@ static const Action s_mapped[] = {
     ACT_INTERACT,
     ACT_VEHICLE,
     ACT_PAUSE,
-    ACT_INVENTORY,
-    ACT_QUIT,
     ACT_MENU_UP,
     ACT_MENU_DOWN,
     ACT_MENU_CONFIRM,
@@ -153,8 +151,6 @@ void backend_input_poll(void) {
   key_event(b, PSP_CTRL_CROSS, ACT_BOOST);
   key_event(b, PSP_CTRL_TRIANGLE, ACT_VEHICLE);
   key_event(b, PSP_CTRL_START, ACT_PAUSE);
-  key_event(b, PSP_CTRL_HOME, ACT_QUIT);
-  key_event(b, PSP_CTRL_SELECT, ACT_INVENTORY);
 
   /* Menu nav (island1-8nfp): D-pad Up/Down move, Cross confirms, Circle
    * backs. These alias the gameplay buttons exactly like the desktop table

@@ -25,6 +25,7 @@
 #include "boot_kind.h"
 #include "game.h"
 #include "input.h"
+#include "psp_assets.h"
 #include "psp_setup.h"
 #include "render_gu.h"
 
@@ -286,6 +287,9 @@ int main(int argc, char** argv) {
   setbuf(stdout, NULL);
 
   boot_report(argc, argv);
+  /* Boot kind is now known; resolve the asset root chain once for all
+   * texture/audio loads (psp_assets.c). */
+  psp_assets_init();
 
   input_init();
   backend_input_init();

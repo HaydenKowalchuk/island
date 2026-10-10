@@ -245,6 +245,9 @@ elif opt_platform == 'psp'
     'backend/psp/main.c',
     'backend/psp/render_gu.c',
     'backend/psp/texture_gu.c',
+    # Boot-kind-aware asset path resolver shared by texture_gu.c and
+    # audio_psp.c -- one root chain, no getenv (PSP firmware has no env).
+    'backend/psp/psp_assets.c',
     # Native sceAudio backend (island1-26pd): PGE-style software mixer on a
     # sceAudioChReserve channel. No miniaudio on PSP at all -- toolchain
     # functions only, same architecture as audio_dc.c on dreamcast.
