@@ -1817,9 +1817,7 @@ void game_render(float frame_dt) {
     y += 12;
 
     /* Per-band prop counts (island1-288p): near/mid/far drawn, culled. */
-    snprintf(buf, sizeof(buf), "LOD %d/%d/%d CULLED %d", s_lod_count[LOD_NEAR],
-             s_lod_count[LOD_MID], s_lod_count[LOD_FAR],
-             s_lod_count[LOD_CULL]);
+    snprintf(buf, sizeof(buf), "LOD %d/%d/%d CULLED %d", s_lod_count[LOD_NEAR], s_lod_count[LOD_MID], s_lod_count[LOD_FAR], s_lod_count[LOD_CULL]);
     r_text_2d(x, y, 1.0f, buf, white);
   }
 
