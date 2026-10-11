@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "audio.h"
+#include "bundle.h"
 
 /*
  * Desktop audio backend (island1-a9pu): ma_engine with a resident SFX voice
@@ -30,14 +31,18 @@ static ma_sound s_music;
 static int s_music_up = 0;
 
 /* Probe the same root chain the texture loaders use, plus the dedicated
- * audio-assets checkout (island1-zozu): AUDIO_ASSET_DIR, ASSET_DIR,
- * audio_assets (repo-relative submodule), assets. */
+ * audio-assets checkout (island1-zozu): AUDIO_ASSET_DIR, ASSET_DIR, the macOS
+ * .app bundle Resources (island1-c990; NULL outside a bundle), audio_assets,
+ * assets. Env vars win so dev builds/run.sh are unaffected. */
 static int resolve_path(const char* relpath, const char* suffix, char* out, int out_len) {
-  static const char* roots[] = {NULL, NULL, "audio_assets", "assets"};
+  static const char* roots[5];
   roots[0] = getenv("AUDIO_ASSET_DIR");
   roots[1] = getenv("ASSET_DIR");
+  roots[2] = bundle_assets_root();
+  roots[3] = "audio_assets";
+  roots[4] = "assets";
 
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 5; i++) {
     if (!roots[i] || !*roots[i])
       continue;
     snprintf(out, out_len, "%s/%s%s", roots[i], relpath, suffix);

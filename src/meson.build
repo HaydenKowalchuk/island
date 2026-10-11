@@ -50,6 +50,9 @@ if opt_platform == 'desktop'
   backend_inc = include_directories('backend/desktop', 'backend/common')
   backend_sources = files(
     'backend/desktop/audio_desktop.c',
+    # macOS .app bundle asset discovery (island1-c990). Returns NULL off-Apple
+    # and outside a /Contents/MacOS/ layout, so dev builds/run.sh are unaffected.
+    'backend/desktop/bundle.c',
     'backend/desktop/gfx_gl.c',
     'backend/desktop/input_glfw.c',
     'backend/desktop/main.c',

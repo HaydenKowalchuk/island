@@ -25,6 +25,7 @@
 #pragma GCC diagnostic pop
 #endif
 
+#include "bundle.h"
 #include "texture.h"
 
 /*
@@ -38,7 +39,13 @@ static int s_tex_count = 0;
 
 static const char* asset_root(void) {
   const char* dir = getenv("ASSET_DIR");
-  return (dir && *dir) ? dir : "assets";
+  if (dir && *dir)
+    return dir;
+  /* No env var: if we're inside a macOS .app bundle, use its Resources. */
+  const char* bundled = bundle_assets_root();
+  if (bundled)
+    return bundled;
+  return "assets";
 }
 
 static TextureId load_texture(const char* name) {
